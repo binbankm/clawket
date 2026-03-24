@@ -23,6 +23,7 @@ import { useProPaywall } from '../../contexts/ProPaywallContext';
 import { useNativeStackModalHeader } from '../../hooks/useNativeStackModalHeader';
 import { analyticsEvents } from '../../services/analytics/events';
 import { resolveAgentDisplayName } from '../../services/agent-display-name';
+import { enrichAgentsWithIdentity } from '../../services/agent-identity';
 import { useAppTheme } from '../../theme';
 import { FontSize, FontWeight, Radius, Space } from '../../theme/tokens';
 import type { AgentInfo } from '../../types/agent';
@@ -121,25 +122,7 @@ export function AgentListScreen(): React.JSX.Element {
       const filtered = pendingDeleteIdsRef.current.size > 0
         ? result.agents.filter(a => !pendingDeleteIdsRef.current.has(a.id))
         : result.agents;
-      const enriched = await Promise.all(
-        filtered.map(async (a) => {
-          if (a.identity?.emoji) return a;
-          try {
-            const id = await gateway.fetchIdentity(a.id);
-            return {
-              ...a,
-              identity: {
-                ...a.identity,
-                name: a.identity?.name || id.name,
-                emoji: id.emoji,
-                avatar: a.identity?.avatar || id.avatar,
-              },
-            };
-          } catch {
-            return a;
-          }
-        }),
-      );
+      const enriched = await enrichAgentsWithIdentity(gateway, filtered);
       setLocalAgents(enriched);
       setMainKey(result.mainKey);
       setAgents(enriched);

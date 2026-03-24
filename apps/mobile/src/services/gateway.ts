@@ -838,6 +838,9 @@ export class GatewayClient {
   public async setAgentFile(name: string, content: string, agentId = 'main'): Promise<{ ok: boolean }> {
     const payload = await this.sendRequest('agents.files.set', { agentId, name, content });
     const result = payload as { ok?: boolean } | null;
+    if (result?.ok && name === 'IDENTITY.md') {
+      this.invalidateAgentMetadataCache(agentId);
+    }
     return { ok: result?.ok ?? false };
   }
 

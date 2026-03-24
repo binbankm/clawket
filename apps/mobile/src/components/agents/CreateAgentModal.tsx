@@ -15,6 +15,7 @@ import { FontSize, FontWeight, Radius, Space } from '../../theme/tokens';
 import { ModalSheet } from '../ui';
 import { EmojiPicker, getRandomEmoji } from './EmojiPicker';
 import { shouldResetCreateAgentForm } from './createAgentModalState';
+import { enrichAgentsWithIdentity } from '../../services/agent-identity';
 
 type Props = {
   visible: boolean;
@@ -109,24 +110,7 @@ export function CreateAgentModal({ visible, onClose, onCreated }: Props): React.
           const result = await gateway.listAgents();
           const newAgent = result.agents.find((a) => !prevAgentIdsRef.current.has(a.id));
           if (newAgent) {
-            // Enrich all agents with identity data
-            const enriched = await Promise.all(
-              result.agents.map(async (a) => {
-                if (a.identity?.emoji) return a;
-                try {
-                  const id = await gateway.fetchIdentity(a.id);
-                  return {
-                    ...a,
-                    identity: {
-                      ...a.identity,
-                      name: a.identity?.name || id.name,
-                      emoji: id.emoji,
-                      avatar: a.identity?.avatar || id.avatar,
-                    },
-                  };
-                } catch { return a; }
-              }),
-            );
+            const enriched = await enrichAgentsWithIdentity(gateway, result.agents);
             setAgents(enriched);
             stopPolling();
             onClose();
@@ -142,23 +126,7 @@ export function CreateAgentModal({ visible, onClose, onCreated }: Props): React.
         stopPolling();
         try {
           const result = await gateway.listAgents();
-          const enriched = await Promise.all(
-            result.agents.map(async (a) => {
-              if (a.identity?.emoji) return a;
-              try {
-                const id = await gateway.fetchIdentity(a.id);
-                return {
-                  ...a,
-                  identity: {
-                    ...a.identity,
-                    name: a.identity?.name || id.name,
-                    emoji: id.emoji,
-                    avatar: a.identity?.avatar || id.avatar,
-                  },
-                };
-              } catch { return a; }
-            }),
-          );
+          const enriched = await enrichAgentsWithIdentity(gateway, result.agents);
           setAgents(enriched);
           const newAgent = enriched.find((a) => !prevAgentIdsRef.current.has(a.id));
           onClose();

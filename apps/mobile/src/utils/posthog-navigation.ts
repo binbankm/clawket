@@ -62,6 +62,7 @@ export const TRACKED_SCREEN_DEFINITIONS: Record<string, ScreenDefinition> = {
   ToolList: { name: 'Tools', area: 'console', tab: 'Console', kind: 'list' },
   AgentList: { name: 'Agents', area: 'console', tab: 'Console', kind: 'list' },
   AgentDetail: { name: 'Agent Detail', area: 'console', tab: 'Console', kind: 'detail' },
+  AgentUserInfo: { name: 'Agent User Info', area: 'console', tab: 'Console', kind: 'editor' },
   ClawHub: { name: 'ClawHub', area: 'console', tab: 'Console', kind: 'webview' },
   Docs: { name: 'Docs', area: 'console', tab: 'Console', kind: 'webview' },
   HeartbeatSettings: { name: 'Heartbeat Settings', area: 'console', tab: 'Console', kind: 'editor' },

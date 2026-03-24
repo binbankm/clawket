@@ -42,6 +42,7 @@ type Props = {
   onSelectGateway?: (configId: string) => void | Promise<void>;
   onAddGateway?: () => void;
   onNewAgent?: () => void;
+  onManageAgents?: () => void;
 };
 
 function ModalContainer({ children }: React.PropsWithChildren): React.JSX.Element {
@@ -126,6 +127,7 @@ export function AgentsModal({
   onSelectGateway,
   onAddGateway,
   onNewAgent,
+  onManageAgents,
 }: Props): React.JSX.Element {
   const { t } = useTranslation(['chat', 'common', 'config']);
   const { theme } = useAppTheme();
@@ -327,19 +329,36 @@ export function AgentsModal({
                 </View>
               </View>
 
-              {onNewAgent ? (
-                <TouchableOpacity
-                  style={styles.newAgentRow}
-                  onPress={() => {
-                    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    bottomSheetRef.current?.dismiss();
-                    onNewAgent();
-                  }}
-                  activeOpacity={0.7}
-                >
-                  <Plus size={18} color={theme.colors.primary} strokeWidth={2} />
-                  <Text style={styles.newAgentText}>{t('New Agent')}</Text>
-                </TouchableOpacity>
+              {onNewAgent || onManageAgents ? (
+                <View style={styles.agentActions}>
+                  {onNewAgent ? (
+                    <TouchableOpacity
+                      style={styles.newAgentRow}
+                      onPress={() => {
+                        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                        bottomSheetRef.current?.dismiss();
+                        onNewAgent();
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Plus size={18} color={theme.colors.primary} strokeWidth={2} />
+                      <Text style={styles.newAgentText}>{t('New Agent')}</Text>
+                    </TouchableOpacity>
+                  ) : null}
+                  {onManageAgents ? (
+                    <TouchableOpacity
+                      style={styles.manageAgentsRow}
+                      onPress={() => {
+                        void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                        bottomSheetRef.current?.dismiss();
+                        onManageAgents();
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.manageAgentsText}>{t('Manage All Agents')}</Text>
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
               ) : null}
             </View>
           ) : null}
@@ -397,6 +416,9 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['theme']['colors'])
       gap: Space.sm,
     },
     agentGroup: {
+      gap: Space.sm,
+    },
+    agentActions: {
       gap: Space.sm,
     },
     agentSection: {
@@ -515,6 +537,16 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['theme']['colors'])
       borderRadius: Radius.lg,
       backgroundColor: colors.primarySoft,
     },
+    manageAgentsRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: Space.md,
+      borderRadius: Radius.lg,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+    },
     addGatewayRow: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -533,6 +565,11 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['theme']['colors'])
       fontSize: FontSize.base,
       fontWeight: FontWeight.medium,
       color: colors.primary,
+    },
+    manageAgentsText: {
+      fontSize: FontSize.base,
+      fontWeight: FontWeight.medium,
+      color: colors.text,
     },
   });
 }

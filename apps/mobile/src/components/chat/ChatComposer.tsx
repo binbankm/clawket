@@ -463,8 +463,11 @@ function createStyles(
   scheme: 'light' | 'dark',
 ) {
   const tintOverlay = scheme === 'dark'
-    ? 'rgba(11,18,32,0.55)'
-    : 'rgba(255,255,255,0.65)';
+    ? 'rgba(11,18,32,0.68)'
+    : 'rgba(255,255,255,0.82)';
+  const blurOutline = scheme === 'dark'
+    ? 'rgba(255,255,255,0.12)'
+    : 'rgba(255,255,255,0.66)';
 
   return StyleSheet.create({
     composer: {
@@ -511,6 +514,8 @@ function createStyles(
       paddingHorizontal: Space.sm,
       paddingVertical: 3,
       borderRadius: Radius.sm,
+      borderWidth: 1,
+      borderColor: blurOutline,
       overflow: 'hidden',
     },
     blurBadgeTint: {
@@ -528,6 +533,8 @@ function createStyles(
     },
     inputWrapWallpaper: {
       borderRadius: 22,
+      borderWidth: 1,
+      borderColor: blurOutline,
       overflow: 'hidden',
     },
     input: {
@@ -572,6 +579,8 @@ function createStyles(
       width: 36,
       height: 36,
       borderRadius: 18,
+      borderWidth: 1,
+      borderColor: blurOutline,
       overflow: 'hidden',
       alignItems: 'center',
       justifyContent: 'center',

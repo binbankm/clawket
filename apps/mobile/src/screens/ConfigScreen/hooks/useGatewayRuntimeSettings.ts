@@ -250,7 +250,6 @@ export function useGatewayRuntimeSettings({ gateway, gatewayEpoch, hasActiveGate
     await patchWithRestart({
       patch: {},
       configHash: hash,
-      confirmation: true,
       savingMessage: t('Requesting Gateway restart...'),
       restartingMessage: t('Restarting Gateway...'),
       onSuccess: async () => {

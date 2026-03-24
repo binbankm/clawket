@@ -1,5 +1,6 @@
 import { Dispatch, RefObject, SetStateAction, useEffect, useRef } from 'react';
 import i18n from '../../../i18n';
+import { enrichAgentsWithIdentity } from '../../../services/agent-identity';
 import { extractText } from '../../../services/gateway';
 import { sessionKeysMatch } from '../../../utils/session-key';
 import {
@@ -372,27 +373,7 @@ export function useGatewayChatEvents(params: Params) {
             if (result.agents.length > 0) {
               // Immediately provide basic agent data so UI has something to show
               onAgentsLoaded(result.agents);
-              // Enrich agents missing emoji/avatar with full identity data
-              // (same logic as AgentListScreen) so icons display correctly
-              const enriched = await Promise.all(
-                result.agents.map(async (a) => {
-                  if (a.identity?.emoji) return a;
-                  try {
-                    const id = await gateway.fetchIdentity(a.id);
-                    return {
-                      ...a,
-                      identity: {
-                        ...a.identity,
-                        name: a.identity?.name || id.name,
-                        emoji: id.emoji,
-                        avatar: a.identity?.avatar || id.avatar,
-                      },
-                    };
-                  } catch {
-                    return a;
-                  }
-                }),
-              );
+              const enriched = await enrichAgentsWithIdentity(gateway, result.agents);
               onAgentsLoaded(enriched);
             }
             if (result.defaultId && result.defaultId !== 'main') {

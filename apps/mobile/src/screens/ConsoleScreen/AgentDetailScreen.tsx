@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -9,20 +10,29 @@ import {
   View,
 } from 'react-native';
 
+import { ChevronRight, UserRound } from 'lucide-react-native';
 import { useTranslation } from 'react-i18next';
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { LoadingState } from '../../components/ui';
 import { useGatewayPatch } from '../../hooks/useGatewayPatch';
 import { useNativeStackModalHeader } from '../../hooks/useNativeStackModalHeader';
+import { EmojiPicker } from '../../components/agents/EmojiPicker';
 import { ModelConfigSection } from '../../components/console/ModelConfigSection';
 import { ModelPickerModal, resolveProviderModel } from '../../components/chat/ModelPickerModal';
 import type { ModelInfo } from '../../components/chat/ModelPickerModal';
 import { useAppContext } from '../../contexts/AppContext';
 import { useAppTheme } from '../../theme';
 import { analyticsEvents } from '../../services/analytics/events';
+import { enrichAgentsWithIdentity } from '../../services/agent-identity';
 import { FontSize, FontWeight, Radius, Space } from '../../theme/tokens';
 import type { AgentInfo } from '../../types/agent';
+import {
+  EMPTY_AGENT_IDENTITY_PROFILE,
+  parseAgentIdentityProfile,
+  type AgentIdentityProfile,
+} from '../../utils/agent-identity-profile';
+import { persistAgentDetailChanges } from '../../utils/agent-detail-save';
 import { addFallbackModel, moveFallbackModel, removeFallbackModelAt, sanitizeFallbackModels } from '../../utils/fallback-models';
 import type { ConsoleStackParamList } from './ConsoleTab';
 import { pendingAgentDeletes } from './AgentListScreen';
@@ -53,11 +63,14 @@ export function AgentDetailScreen(): React.JSX.Element {
   // Form fields
   const [name, setName] = useState('');
   const [emoji, setEmoji] = useState('');
+  const [vibe, setVibe] = useState('');
   const [model, setModel] = useState('');
   const [fallbacks, setFallbacks] = useState<string[]>([]);
 
   // Initial values for dirty tracking
-  const initialRef = useRef({ name: '', model: '', fallbacks: '' });
+  const initialRef = useRef({ name: '', emoji: '', vibe: '', model: '', fallbacks: '' });
+  const identityProfileRef = useRef<AgentIdentityProfile>(EMPTY_AGENT_IDENTITY_PROFILE);
+  const identityFileContentRef = useRef('');
 
   // Config hash for patch
   const configHashRef = useRef<string | null>(null);
@@ -73,19 +86,27 @@ export function AgentDetailScreen(): React.JSX.Element {
   const isCurrent = agentId === currentAgentId;
   const trimmedName = name.trim();
   const isDirty = trimmedName !== initialRef.current.name
+    || emoji !== initialRef.current.emoji
+    || vibe.trim() !== initialRef.current.vibe
     || model !== initialRef.current.model
     || JSON.stringify(fallbacks) !== initialRef.current.fallbacks;
 
   const loadAgent = useCallback(async () => {
     setLoading(true);
     try {
-      const [agentsResult, identityResult, configResult] = await Promise.allSettled([
+      const [agentsResult, identityResult, identityFileResult, configResult] = await Promise.allSettled([
         gateway.listAgents(),
         gateway.fetchIdentity(agentId),
+        gateway.getAgentFile('IDENTITY.md', agentId),
         gateway.getConfig(),
       ]);
 
       let loadedName = '';
+      let loadedEmoji = '';
+      let loadedCreature = '';
+      let loadedVibe = '';
+      let loadedTheme = '';
+      let loadedAvatar = '';
       let loadedModel = '';
       let loadedFallbacks: string[] = [];
 
@@ -99,12 +120,10 @@ export function AgentDetailScreen(): React.JSX.Element {
       if (identityResult.status === 'fulfilled') {
         const identity = identityResult.value;
         if (identity.name) loadedName = identity.name;
-        setEmoji(identity.emoji ?? '');
+        loadedEmoji = identity.emoji ?? '';
+        loadedAvatar = identity.avatar ?? '';
       }
 
-      setName(loadedName);
-
-      // Extract current model + fallbacks from gateway config
       if (configResult.status === 'fulfilled' && configResult.value.config) {
         configHashRef.current = configResult.value.hash;
         const cfg = configResult.value.config;
@@ -116,6 +135,13 @@ export function AgentDetailScreen(): React.JSX.Element {
           agentIndexRef.current = idx;
           if (idx >= 0) {
             const agentCfg = agentsList[idx] as Record<string, unknown>;
+            const agentIdentity = typeof agentCfg.identity === 'object' && agentCfg.identity !== null
+              ? agentCfg.identity as Record<string, unknown>
+              : null;
+            const configTheme = typeof agentIdentity?.theme === 'string' ? agentIdentity.theme : '';
+            const configAvatar = typeof agentIdentity?.avatar === 'string' ? agentIdentity.avatar : '';
+            if (configTheme) loadedTheme = configTheme;
+            if (configAvatar) loadedAvatar = configAvatar;
             if (agentCfg?.model) {
               if (typeof agentCfg.model === 'string') {
                 loadedModel = agentCfg.model;
@@ -136,12 +162,51 @@ export function AgentDetailScreen(): React.JSX.Element {
         }
       }
 
+      if (identityFileResult.status === 'fulfilled') {
+        identityFileContentRef.current = identityFileResult.value.content ?? '';
+        const identityProfile = parseAgentIdentityProfile(identityFileResult.value.content ?? '');
+        if (identityProfile.name) {
+          loadedName = identityProfile.name;
+        }
+        if (identityProfile.emoji) {
+          loadedEmoji = identityProfile.emoji;
+        }
+        if (identityProfile.creature) {
+          loadedCreature = identityProfile.creature;
+        }
+        if (identityProfile.vibe) {
+          loadedVibe = identityProfile.vibe;
+        }
+        if (identityProfile.theme) {
+          loadedTheme = identityProfile.theme;
+        }
+        if (identityProfile.avatar) {
+          loadedAvatar = identityProfile.avatar;
+        }
+      }
+
+      identityProfileRef.current = {
+        ...EMPTY_AGENT_IDENTITY_PROFILE,
+        name: loadedName,
+        emoji: loadedEmoji,
+        creature: loadedCreature,
+        vibe: loadedVibe,
+        theme: loadedTheme,
+        avatar: loadedAvatar,
+      };
+
+      setName(loadedName);
+      setEmoji(loadedEmoji);
+      setVibe(loadedVibe);
+
       setModel(loadedModel);
       setFallbacks(loadedFallbacks);
 
       // Snapshot initial values for dirty tracking
       initialRef.current = {
         name: loadedName,
+        emoji: loadedEmoji,
+        vibe: loadedVibe,
         model: loadedModel,
         fallbacks: JSON.stringify(loadedFallbacks),
       };
@@ -175,65 +240,62 @@ export function AgentDetailScreen(): React.JSX.Element {
     setSaving(true);
     try {
       const sanitizedFallbacks = sanitizeFallbackModels(fallbacks, { primaryModel: model });
+      const nextVibe = vibe.trim();
+      const nextIdentityProfile: AgentIdentityProfile = {
+        ...identityProfileRef.current,
+        name: nextName,
+        emoji,
+        vibe: nextVibe,
+      };
+      const shouldWriteIdentityFile =
+        nextName !== initialRef.current.name
+        || emoji !== initialRef.current.emoji
+        || nextVibe !== initialRef.current.vibe;
+      const shouldSyncConfig =
+        shouldWriteIdentityFile
+        || model !== initialRef.current.model
+        || JSON.stringify(sanitizedFallbacks) !== initialRef.current.fallbacks;
 
-      // Persist the visible display name through both the agent entry and identity,
-      // since identity.name takes precedence in gateway reads.
-      if (!configHashRef.current || agentIndexRef.current < 0) {
+      if (shouldSyncConfig && (!configHashRef.current || agentIndexRef.current < 0)) {
         throw new Error('Agent config is unavailable. Reload and try again.');
       }
 
-      const freshConfig = await gateway.getConfig();
-      if (!freshConfig.config || !freshConfig.hash) {
-        throw new Error('Gateway config is unavailable. Reload and try again.');
-      }
-
-      const cfg = freshConfig.config;
-      const agentsList = (cfg.agents as Record<string, unknown>)?.list;
-      if (!Array.isArray(agentsList)) {
-        throw new Error('Agent list is unavailable in gateway config.');
-      }
-
-      const idx = agentsList.findIndex(
-        (a: Record<string, unknown>) => a && a.id === agentId,
-      );
-      if (idx < 0) {
-        throw new Error(`Agent "${agentId}" was not found in gateway config.`);
-      }
-
-      const agentCfg = { ...(agentsList[idx] as Record<string, unknown>) };
-      agentCfg.name = nextName;
-      const currentIdentity = typeof agentCfg.identity === 'object' && agentCfg.identity !== null
-        ? agentCfg.identity as Record<string, unknown>
-        : {};
-      agentCfg.identity = {
-        ...currentIdentity,
-        name: nextName,
-      };
-      const currentPrimary = model || undefined;
-      const nextFallbacks = sanitizeFallbackModels(sanitizedFallbacks, { primaryModel: currentPrimary });
-      const currentFallbacks = nextFallbacks.length > 0 ? nextFallbacks : undefined;
-      if (currentPrimary || currentFallbacks) {
-        agentCfg.model = {
-          ...(currentPrimary ? { primary: currentPrimary } : {}),
-          ...(currentFallbacks ? { fallbacks: currentFallbacks } : {}),
-        };
-      }
-      const newList = [...agentsList];
-      newList[idx] = agentCfg;
-      const patchObj = { agents: { ...(cfg.agents as Record<string, unknown>), list: newList } };
-      await patchWithRestart({
-        patch: patchObj,
-        configHash: freshConfig.hash,
+      const { nextIdentityFileContent } = await persistAgentDetailChanges({
+        agentId,
+        gateway,
+        patchWithRestart,
+        agentName: nextName,
+        identityProfile: nextIdentityProfile,
+        model,
+        fallbacks: sanitizedFallbacks,
+        shouldWriteIdentityFile,
+        shouldSyncConfig,
+        previousIdentityFileContent: identityFileContentRef.current,
       });
+
+      const shouldUpdateModelState =
+        model !== initialRef.current.model
+        || JSON.stringify(sanitizedFallbacks) !== initialRef.current.fallbacks;
 
       // Refresh global agents
       const result = await gateway.listAgents();
-      setAgents(result.agents);
+      const enrichedAgents = await enrichAgentsWithIdentity(gateway, result.agents);
+      setAgents(enrichedAgents);
+      const refreshedAgent = enrichedAgents.find((item) => item.id === agentId) ?? null;
+      setAgent(refreshedAgent);
 
       // Reset dirty tracking to current values
-      setFallbacks(sanitizedFallbacks);
+      if (shouldUpdateModelState) {
+        setFallbacks(sanitizedFallbacks);
+      }
+      if (shouldWriteIdentityFile) {
+        identityProfileRef.current = nextIdentityProfile;
+        identityFileContentRef.current = nextIdentityFileContent;
+      }
       initialRef.current = {
         name: nextName,
+        emoji,
+        vibe: nextVibe,
         model,
         fallbacks: JSON.stringify(sanitizedFallbacks),
       };
@@ -243,10 +305,22 @@ export function AgentDetailScreen(): React.JSX.Element {
     } finally {
       setSaving(false);
     }
-  }, [agentId, name, model, fallbacks, gateway, setAgents, patchWithRestart, t, tChat, tCommon]);
+  }, [agentId, name, emoji, vibe, model, fallbacks, gateway, setAgents, patchWithRestart, t, tChat, tCommon]);
 
   const handleSave = useCallback(() => {
     if (saving) {
+      return;
+    }
+
+    const sanitizedFallbacks = sanitizeFallbackModels(fallbacks, { primaryModel: model });
+    const shouldRestart =
+      trimmedName !== initialRef.current.name
+      || emoji !== initialRef.current.emoji
+      || model !== initialRef.current.model
+      || JSON.stringify(sanitizedFallbacks) !== initialRef.current.fallbacks;
+
+    if (!shouldRestart) {
+      void commitSave();
       return;
     }
 
@@ -264,7 +338,7 @@ export function AgentDetailScreen(): React.JSX.Element {
         },
       ],
     );
-  }, [commitSave, saving, tCommon]);
+  }, [commitSave, emoji, fallbacks, model, saving, tCommon, trimmedName]);
 
   const handleSwitch = useCallback(() => {
     switchAgent(agentId);
@@ -300,6 +374,10 @@ export function AgentDetailScreen(): React.JSX.Element {
       ],
     );
   }, [agentId, name, gateway, navigation, currentAgentId, switchAgent, mainKey, t, tCommon]);
+
+  const handleOpenUserInfo = useCallback(() => {
+    navigation.navigate('AgentUserInfo', { agentId });
+  }, [agentId, navigation]);
 
   const loadModels = useCallback(async () => {
     setModelsLoading(true);
@@ -348,7 +426,7 @@ export function AgentDetailScreen(): React.JSX.Element {
 
   useNativeStackModalHeader({
     navigation,
-    title: agent?.identity?.name || agent?.name || tCommon('Agent'),
+    title: name || agent?.identity?.name || agent?.name || tCommon('Agent'),
     onClose: () => navigation.goBack(),
   });
 
@@ -389,13 +467,46 @@ export function AgentDetailScreen(): React.JSX.Element {
           />
         </View>
 
-        {/* Emoji (read-only — only set at creation) */}
+        {/* Emoji */}
         <Text style={styles.fieldLabel}>{t('Emoji')}</Text>
-        <View style={[styles.fieldRow, styles.fieldDisabled]}>
-          <Text style={[styles.fieldRowText, { color: theme.colors.textSubtle }]}>
-            {emoji || t('Not set')}
-          </Text>
+        <EmojiPicker
+          value={emoji}
+          onSelect={setEmoji}
+          disabled={saving}
+        />
+
+        <Text style={styles.fieldLabel}>{t('Vibe')}</Text>
+        <View style={styles.fieldRow}>
+          <TextInput
+            style={styles.textInput}
+            value={vibe}
+            onChangeText={setVibe}
+            placeholder={t('How should this agent come across?')}
+            placeholderTextColor={theme.colors.textSubtle}
+            editable={!saving}
+            autoCapitalize="sentences"
+            autoCorrect={false}
+          />
         </View>
+
+        <Text style={styles.fieldLabel}>{t('My Info')}</Text>
+        <Pressable
+          onPress={handleOpenUserInfo}
+          style={({ pressed }) => [
+            styles.navCard,
+            pressed && styles.navCardPressed,
+          ]}
+        >
+          <View style={styles.navCardLead}>
+            <View style={styles.navIconBadge}>
+              <UserRound size={17} color={theme.colors.primary} strokeWidth={2.1} />
+            </View>
+            <View style={styles.navCardText}>
+              <Text style={styles.navCardTitle}>{t('View and edit USER.md fields')}</Text>
+            </View>
+          </View>
+          <ChevronRight size={16} color={theme.colors.textSubtle} strokeWidth={2} />
+        </Pressable>
 
         {/* Model Configuration */}
         <ModelConfigSection
@@ -510,6 +621,48 @@ function createStyles(colors: ReturnType<typeof import('../../theme').useAppThem
       fontSize: FontSize.base,
       color: colors.text,
       paddingVertical: 0,
+    },
+    navCard: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      borderRadius: Radius.md,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+      paddingHorizontal: Space.md,
+      paddingVertical: Space.md,
+    },
+    navCardPressed: {
+      opacity: 0.85,
+    },
+    navCardLead: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: Space.md,
+      flex: 1,
+      paddingRight: Space.md,
+    },
+    navIconBadge: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.inputBackground,
+    },
+    navCardText: {
+      flex: 1,
+      gap: 2,
+    },
+    navCardTitle: {
+      color: colors.text,
+      fontSize: FontSize.base,
+      fontWeight: FontWeight.semibold,
+    },
+    navCardSubtitle: {
+      color: colors.textMuted,
+      fontSize: FontSize.sm,
     },
     // Buttons
     primaryButton: {

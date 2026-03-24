@@ -47,6 +47,7 @@ type Props = {
   onOpenSidebar: () => void;
   onAddGatewayConnection: () => void;
   onOpenCustomConnection: () => void;
+  onManageAgents: () => void;
   openAgentsModalRequestAt?: number | null;
 };
 
@@ -142,7 +143,7 @@ function InitializationView({ theme, styles, onAdd, onUpload, onAddCustom, t }: 
   );
 }
 
-export function ChatScreenLayout({ controller, insets, onOpenSidebar, onAddGatewayConnection, onOpenCustomConnection, openAgentsModalRequestAt }: Props): React.JSX.Element {
+export function ChatScreenLayout({ controller, insets, onOpenSidebar, onAddGatewayConnection, onOpenCustomConnection, onManageAgents, openAgentsModalRequestAt }: Props): React.JSX.Element {
   const { t } = useTranslation(['chat', 'config']);
   const { isPro, showPaywall } = useProPaywall();
   const isFocused = useIsFocused();
@@ -614,6 +615,7 @@ export function ChatScreenLayout({ controller, insets, onOpenSidebar, onAddGatew
         onRetryCommandPickerLoad={controller.retryCommandPickerLoad}
         onRetryModelPickerLoad={controller.retryModelPickerLoad}
         onAddGateway={handleAddGatewayFromSwitcher}
+        onManageAgents={onManageAgents}
         onSelectAgent={handleSelectAgent}
         onSelectGateway={gatewaySwitcher.activateConfig}
         onSelectCommandOption={controller.onSelectCommandOption}

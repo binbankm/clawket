@@ -129,6 +129,25 @@ export function ChatScreen({ openSidebarRequestAt, openAgentsModalRequestAt }: C
     navigation.navigate('My' as never);
   }, [navigation]);
 
+  const handleOpenManageAgents = React.useCallback(() => {
+    const parentNavigation = navigation.getParent();
+    if (!parentNavigation) return;
+
+    parentNavigation.dispatch(
+      CommonActions.navigate({
+        name: 'Console',
+        params: {
+          state: {
+            routes: [
+              { name: 'ConsoleMenu' },
+              { name: 'AgentList' },
+            ],
+          },
+        },
+      }),
+    );
+  }, [navigation]);
+
   const closeAnnouncement = React.useCallback(async () => {
     if (!debugMode) {
       await markCurrentAppUpdateAnnouncementShown();
@@ -191,6 +210,7 @@ export function ChatScreen({ openSidebarRequestAt, openAgentsModalRequestAt }: C
         onOpenSidebar={() => navigation.openDrawer()}
         onAddGatewayConnection={handleOpenAddGatewayConnection}
         onOpenCustomConnection={handleOpenCustomConnection}
+        onManageAgents={handleOpenManageAgents}
         openAgentsModalRequestAt={openAgentsModalRequestAt}
       />
       <AppUpdateAnnouncementModal

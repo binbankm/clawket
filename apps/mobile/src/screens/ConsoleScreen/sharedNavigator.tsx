@@ -19,6 +19,7 @@ import { CronDetailScreen } from './CronDetailScreen';
 import { CronEditorScreen } from './CronEditorScreen';
 import { CronListScreen } from './CronListScreen';
 import { CronWizardScreen } from './CronWizardScreen';
+import { AgentUserInfoScreen } from './AgentUserInfoScreen';
 import { FileEditorScreen } from './FileEditorScreen';
 import { FileListScreen } from './FileListScreen';
 import { LogScreen } from './LogScreen';
@@ -57,6 +58,7 @@ export type ConsoleStackParamList = {
   ToolList: undefined;
   AgentList: { openCreate?: boolean } | undefined;
   AgentDetail: { agentId: string };
+  AgentUserInfo: { agentId: string };
   ClawHub: undefined;
   Docs: { url?: string } | undefined;
   HeartbeatSettings: undefined;
@@ -220,6 +222,7 @@ export function renderConsoleModalScreens({
       renderScreen('ToolList', ToolsScreen, nativeModalHeaderOptions),
       renderScreen('AgentList', AgentListScreen, nativeModalHeaderOptions),
       renderScreen('AgentDetail', AgentDetailScreen, nativeModalHeaderOptions),
+      renderScreen('AgentUserInfo', AgentUserInfoScreen, nativeEditorHeaderOptions),
       renderScreen('ClawHub', ClawHubScreen),
       renderScreen('Docs', DocsScreen),
       renderScreen('HeartbeatSettings', HeartbeatSettingsScreen, nativeEditorHeaderOptions),

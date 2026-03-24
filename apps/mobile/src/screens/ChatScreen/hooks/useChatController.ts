@@ -1877,7 +1877,7 @@ export function useChatController({
         return;
       }
 
-      // Haptic feedback — crisp impact like ChatGPT
+      // Haptic feedback — crisp impact
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Rigid);
 
       const sent = await submitMessageWithConnectionCheck(text, images);

@@ -58,6 +58,15 @@ export const APP_UPDATE_RELEASES: AppUpdateRelease[] = [
         },
       },
       {
+        id: 'agent-create-edit-improvements',
+        emoji: '🤖',
+        title: 'Better Agent editing',
+        subtitle: 'Edit an Agent name, emoji, personality, and more.',
+        action: {
+          type: 'none',
+        },
+      },
+      {
         id: 'stability-and-polish',
         emoji: '🛠️',
         title: 'Fixes, stability, and UI polish',
