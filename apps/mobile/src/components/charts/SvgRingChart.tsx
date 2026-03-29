@@ -134,7 +134,7 @@ export function SvgRingChart({
               d={arc.d}
               stroke={arc.color}
               strokeWidth={strokeWidth}
-              strokeLinecap="round"
+              strokeLinecap="butt"
               fill="none"
               accessibilityLabel={`${arc.label}: ${formatCost(segments[i]?.value ?? 0)}`}
             />
