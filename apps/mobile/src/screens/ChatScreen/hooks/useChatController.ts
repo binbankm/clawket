@@ -27,6 +27,7 @@ import { PendingImage, UiMessage } from "../../../types/chat";
 import {
   extractAssistantDisplayText,
   extractText,
+  isAssistantDeliveryMirrorMessage,
   isAssistantSilentReplyMessage,
   parseMessageTimestamp,
   sessionLabel,
@@ -592,6 +593,7 @@ export function useChatController({
         ) {
           const message = historyResult.messages[index];
           if (message.role !== "assistant") continue;
+          if (isAssistantDeliveryMirrorMessage(message)) continue;
           if (isAssistantSilentReplyMessage(message)) continue;
           const text = extractAssistantDisplayText(message.content);
           if (!text.trim()) continue;
@@ -1725,7 +1727,10 @@ export function useChatController({
                   );
                   const assistant = [...historyResult.messages]
                     .reverse()
-                    .find((item) => item.role === "assistant");
+                    .find((item) => (
+                      item.role === "assistant"
+                      && !isAssistantDeliveryMirrorMessage(item)
+                    ));
                   finalText = extractAssistantDisplayText(assistant?.content);
                 } catch {
                   finalText = latestText;
