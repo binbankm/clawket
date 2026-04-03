@@ -98,6 +98,7 @@
       ],
       "expo-localization",
       "./plugins/with-locales",
+      "./plugins/with-alternate-app-icons",
       "./plugins/with-android-release-signing",
       "./plugins/with-xcode-env"
     ],

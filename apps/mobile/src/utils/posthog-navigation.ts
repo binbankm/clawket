@@ -68,6 +68,7 @@ export const TRACKED_SCREEN_DEFINITIONS: Record<string, ScreenDefinition> = {
   HeartbeatSettings: { name: 'Heartbeat Settings', area: 'console', tab: 'Console', kind: 'editor' },
   ChatHistory: { name: 'Chat History', area: 'console', tab: 'Console', kind: 'list' },
   SessionsBoard: { name: 'Sessions Board', area: 'console', tab: 'Console', kind: 'list' },
+  AgentSessionsBoard: { name: 'Agent & Session Board', area: 'console', tab: 'Console', kind: 'list' },
   ChatHistoryDetail: { name: 'Chat History Detail', area: 'console', tab: 'Console', kind: 'detail' },
   FavoriteMessageDetail: { name: 'Favorite Message Detail', area: 'console', tab: 'Console', kind: 'detail' },
 };

@@ -14,6 +14,7 @@ import {
   isSilentReplyText,
   parseMessageTimestamp,
   sanitizeDisplayText,
+  shouldHideMessage,
   sanitizeSilentPreviewText,
   sanitizeUserMessageText,
   stripGatewayPrefixes,
@@ -264,6 +265,29 @@ describe('sanitizeUserMessageText', () => {
   });
 });
 
+describe('shouldHideMessage', () => {
+  it('hides user messages that start with the OpenClaw runtime context prefix', () => {
+    expect(shouldHideMessage({
+      role: 'user',
+      text: 'OpenClaw runtime context\n\nhello',
+    })).toBe(true);
+  });
+
+  it('matches the runtime context prefix after gateway-injected wrappers are stripped', () => {
+    expect(shouldHideMessage({
+      role: 'user',
+      text: 'System: [2026-03-01 23:51:03 GMT+8] Model switched.\n\n[Sun 2026-03-01 23:52 GMT+8] OpenClaw runtime context\n\nhello',
+    })).toBe(true);
+  });
+
+  it('does not hide assistant messages with the same text prefix', () => {
+    expect(shouldHideMessage({
+      role: 'assistant',
+      text: 'OpenClaw runtime context\n\nhello',
+    })).toBe(false);
+  });
+});
+
 describe('extractImageUris', () => {
   it('returns undefined for non-array input', () => {
     expect(extractImageUris('string')).toBeUndefined();
@@ -438,9 +462,13 @@ describe('sessionLabel', () => {
   });
 
   it('formats channel sessions', () => {
-    // cleanDetail strips "telegram" prefix but the "/" remains after regex
-    const result = sessionLabel({ key: 'agent:abc:telegram', channel: 'telegram', label: 'telegram/mygroup' } as any);
-    expect(result).toBe('Telegram /mygroup');
+    const result = sessionLabel({
+      key: 'agent:abc:telegram:group:mygroup',
+      channel: 'telegram',
+      kind: 'group',
+      label: 'telegram/mygroup',
+    } as any);
+    expect(result).toBe('Telegram Group · mygroup');
   });
 
   it('prefers an explicit renamed channel session title', () => {
@@ -448,9 +476,33 @@ describe('sessionLabel', () => {
     expect(result).toBe('Ops War Room');
   });
 
-  it('returns channel name only when no detail', () => {
-    const result = sessionLabel({ key: 'agent:abc:discord', channel: 'discord' } as any);
-    expect(result).toBe('Discord');
+  it('formats direct sessions with a readable base label', () => {
+    const result = sessionLabel({
+      key: 'agent:abc:telegram:user-1',
+      channel: 'telegram',
+      kind: 'direct',
+      derivedTitle: 'telegram:ou_1234567890',
+    } as any);
+    expect(result).toBe('Telegram DM');
+  });
+
+  it('formats group sessions with a readable base label when no detail is available', () => {
+    const result = sessionLabel({
+      key: 'agent:abc:discord:channel:123',
+      channel: 'discord',
+      kind: 'group',
+    } as any);
+    expect(result).toBe('Discord Channel');
+  });
+
+  it('uses derived titles as short detail when they remain readable', () => {
+    const result = sessionLabel({
+      key: 'agent:abc:telegram:group:ops-room',
+      channel: 'telegram',
+      kind: 'group',
+      derivedTitle: 'telegram:g-ops-room',
+    } as any);
+    expect(result).toBe('Telegram Group · ops room');
   });
 
   it('formats subagent sessions', () => {

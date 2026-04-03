@@ -1,0 +1,9 @@
+{
+  "name": "clawket-app-icon",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Local Expo module for switching Clawket app icons.",
+  "license": "Proprietary",
+  "author": "Clawket",
+  "homepage": "https://github.com/openai/clawket"
+}

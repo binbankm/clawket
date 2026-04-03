@@ -90,6 +90,12 @@ export type GatewayConfigBackupSummary = {
   createdAt: number;
 };
 
+export type AutoAppReviewState = {
+  firstSeenAtMs: number;
+  lastAttemptAtMs?: number;
+  lastAttemptVersion?: string;
+};
+
 export type DeviceTokenStorageScope = {
   serverUrl?: string | null;
   gatewayId?: string | null;
@@ -129,6 +135,7 @@ const KEYS = {
   userPromptsSeeded: 'clawket.userPrompts.seeded.v1',
   promptPeekShown: 'clawket.promptPeekShown.v1',
   proSubscriptionSnapshot: 'clawket.proSubscriptionSnapshot.v1',
+  autoAppReviewState: 'clawket.autoAppReviewState.v1',
 } as const;
 
 const NODE_INVOKE_AUDIT_KEY = 'clawket.nodeInvokeAudit.v1';
@@ -209,6 +216,24 @@ function normalizeLastOpenedSessionSnapshot(value: unknown): LastOpenedSessionSn
     agentName: agentName || undefined,
     agentEmoji: agentEmoji || undefined,
     agentAvatarUri: agentAvatarUri || undefined,
+  };
+}
+
+function normalizeAutoAppReviewState(value: unknown): AutoAppReviewState | null {
+  if (!value || typeof value !== 'object') return null;
+  const record = value as Record<string, unknown>;
+  const firstSeenAtMs = typeof record.firstSeenAtMs === 'number' ? record.firstSeenAtMs : NaN;
+  if (!Number.isFinite(firstSeenAtMs) || firstSeenAtMs <= 0) return null;
+  const lastAttemptAtMs = typeof record.lastAttemptAtMs === 'number' && Number.isFinite(record.lastAttemptAtMs)
+    ? record.lastAttemptAtMs
+    : undefined;
+  const lastAttemptVersion = typeof record.lastAttemptVersion === 'string'
+    ? record.lastAttemptVersion.trim() || undefined
+    : undefined;
+  return {
+    firstSeenAtMs,
+    ...(lastAttemptAtMs !== undefined ? { lastAttemptAtMs } : {}),
+    ...(lastAttemptVersion ? { lastAttemptVersion } : {}),
   };
 }
 
@@ -1036,6 +1061,26 @@ export const StorageService = {
   async clearProSubscriptionSnapshot(): Promise<void> {
     try {
       await AsyncStorage.removeItem(KEYS.proSubscriptionSnapshot);
+    } catch {
+      // Best-effort cache only.
+    }
+  },
+
+  async getAutoAppReviewState(): Promise<AutoAppReviewState | null> {
+    try {
+      const raw = await AsyncStorage.getItem(KEYS.autoAppReviewState);
+      if (!raw) return null;
+      return normalizeAutoAppReviewState(JSON.parse(raw));
+    } catch {
+      return null;
+    }
+  },
+
+  async setAutoAppReviewState(state: AutoAppReviewState): Promise<void> {
+    const normalized = normalizeAutoAppReviewState(state);
+    if (!normalized) return;
+    try {
+      await AsyncStorage.setItem(KEYS.autoAppReviewState, JSON.stringify(normalized));
     } catch {
       // Best-effort cache only.
     }

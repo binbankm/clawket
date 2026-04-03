@@ -37,6 +37,7 @@ import { ChatHistoryScreen } from './ChatHistoryScreen';
 import { ChatHistoryDetailScreen } from './ChatHistoryDetailScreen';
 import { FavoriteMessageDetailScreen } from './FavoriteMessageDetailScreen';
 import { SessionsBoardScreen } from './SessionsBoardScreen';
+import { AgentSessionsBoardScreen } from './AgentSessionsBoardScreen';
 
 export type ConsoleStackParamList = {
   ConsoleMenu: undefined;
@@ -64,6 +65,7 @@ export type ConsoleStackParamList = {
   HeartbeatSettings: undefined;
   ChatHistory: undefined;
   SessionsBoard: undefined;
+  AgentSessionsBoard: undefined;
   ChatHistoryDetail: {
     storageKey: string;
     initialQuery?: string;
@@ -236,6 +238,7 @@ export function renderConsoleModalScreens({
       renderScreen('HeartbeatSettings', HeartbeatSettingsScreen, nativeEditorHeaderOptions),
       renderScreen('ChatHistory', ChatHistoryScreen, nativeModalHeaderOptions),
       renderScreen('SessionsBoard', SessionsBoardScreen, nativeModalHeaderOptions),
+      renderScreen('AgentSessionsBoard', AgentSessionsBoardScreen, nativeModalHeaderOptions),
       renderScreen('ChatHistoryDetail', ChatHistoryDetailScreen, nativeModalHeaderOptions),
       renderScreen('FavoriteMessageDetail', FavoriteMessageDetailScreen, nativeModalHeaderOptions),
     ]

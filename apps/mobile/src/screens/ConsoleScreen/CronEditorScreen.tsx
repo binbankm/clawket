@@ -20,6 +20,7 @@ import type { ModelInfo } from '../../components/chat/ModelPickerModal';
 import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../../contexts/AppContext';
 import { analyticsEvents } from '../../services/analytics/events';
+import { scheduleAutomaticAppReview } from '../../services/auto-app-review';
 import { useAppTheme } from '../../theme';
 import { FontSize, FontWeight, HitSize, Radius, Space } from '../../theme/tokens';
 import type { CronJob, CronJobCreate, CronJobPatch, CronSchedule } from '../../types';
@@ -586,8 +587,15 @@ export function CronEditorScreen(): React.JSX.Element {
           delivery_mode: form.deliveryMode,
           source: 'cron_editor',
         });
-        Alert.alert(t('common:Saved'), t('Cron job created.'));
-        navigation.replace('CronDetail', { jobId: created.id });
+        Alert.alert(t('common:Saved'), t('Cron job created.'), [
+          {
+            text: t('common:Close'),
+            onPress: () => {
+              navigation.replace('CronDetail', { jobId: created.id });
+              scheduleAutomaticAppReview('cron_created');
+            },
+          },
+        ]);
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : t('Failed to save cron job');

@@ -133,7 +133,7 @@ export function useGatewayPatch(gateway: GatewayClient) {
         typeof opts.confirmation === 'object' ? opts.confirmation : {},
         {
           title: t('Confirm Save'),
-          message: t('Saving this config will restart Gateway and may interrupt active tasks like chats, cron jobs, or sub-agents. Continue?'),
+          message: t('This will restart Gateway. Continue?'),
           confirmText: t('Save'),
           cancelText: t('Cancel'),
         },

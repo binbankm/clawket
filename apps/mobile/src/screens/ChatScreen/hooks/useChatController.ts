@@ -31,6 +31,7 @@ import {
   isAssistantSilentReplyMessage,
   parseMessageTimestamp,
   sessionLabel,
+  shouldHideMessage,
 } from "../../../utils/chat-message";
 import { sessionKeysMatch } from "../../../utils/session-key";
 import { useChatAutoCache } from "../../../hooks/useChatAutoCache";
@@ -42,6 +43,7 @@ import {
   agentIdFromSessionKey,
   applyRunStart,
 } from "./agentActivity";
+import { ChildSessionActivity } from "./childSessionActivity";
 import { resolveCachedAgentIdentity } from "./cacheAgentIdentity";
 import { shouldClearComposerInput } from "./composerClearPolicy";
 import { canSendMessage } from "./composerInteractionPolicy";
@@ -71,6 +73,7 @@ import {
 import { useChatComposerDraft } from "./useChatComposerDraft";
 import { useChatAgentIdentity } from "./useChatAgentIdentity";
 import { useBufferedDebugLog } from "./useBufferedDebugLog";
+import { preparePendingImagesForSend } from "./preparePendingImagesForSend";
 
 type PendingImageWithFile = PendingImage & { fileName?: string };
 
@@ -229,13 +232,30 @@ export function useChatController({
   const sessionRunStateRef = useRef<Map<string, SessionRunState>>(new Map());
   const pendingOptimisticRunIdsRef = useRef<Map<string, string>>(new Map());
   const agentActivityRef = useRef<Map<string, AgentActivity>>(new Map());
+  const childSessionActivityRef = useRef<Map<string, ChildSessionActivity>>(new Map());
   const lastConfirmedTransportAtRef = useRef(0);
   const forceSendProbeUntilRef = useRef(0);
   const [agentActiveCount, setAgentActiveCount] = useState(0);
+  const [childSessionActivityVersion, setChildSessionActivityVersion] = useState(0);
   const onAgentActiveCountChange = useCallback((delta: 1 | -1) => {
     setAgentActiveCount((prev) => Math.max(0, prev + delta));
   }, []);
   const resetAgentActiveCount = useCallback(() => setAgentActiveCount(0), []);
+  const onChildSessionActivityChange = useCallback(() => {
+    setChildSessionActivityVersion((prev) => prev + 1);
+  }, []);
+  const clearChildSessionActivities = useCallback((sessionKeys: string[]) => {
+    if (sessionKeys.length === 0) return;
+    let changed = false;
+    for (const sessionKey of sessionKeys) {
+      if (childSessionActivityRef.current.delete(sessionKey)) {
+        changed = true;
+      }
+    }
+    if (changed) {
+      onChildSessionActivityChange();
+    }
+  }, [onChildSessionActivityChange]);
   const compactionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const silentCommandRunIdsRef = useRef<Set<string>>(new Set());
 
@@ -908,11 +928,13 @@ export function useChatController({
     sessionRunStateRef.current.clear();
     pendingOptimisticRunIdsRef.current.clear();
     agentActivityRef.current.clear();
+    childSessionActivityRef.current.clear();
     runRecoveryInFlightRef.current = null;
     recentRunRecoveryRef.current = null;
     historyReloadInFlightRef.current = null;
     recentHistoryReloadRef.current = null;
     resetAgentActiveCount();
+    onChildSessionActivityChange();
     currentRunIdRef.current = null;
     streamStartedAtRef.current = null;
     lastRunSignalAtRef.current = 0;
@@ -1267,6 +1289,8 @@ export function useChatController({
     execApprovalEnabled,
     setActivityLabel,
     agentActivityRef,
+    childSessionActivityRef,
+    onChildSessionActivityChange,
     onAgentActiveCountChange,
     resetAgentActiveCount,
     onRunSignal: useCallback(() => {
@@ -1526,7 +1550,9 @@ export function useChatController({
               }))
             : undefined,
       };
-      history.setMessages((prev) => [...prev, uiMsg]);
+      if (!shouldHideMessage(uiMsg)) {
+        history.setMessages((prev) => [...prev, uiMsg]);
+      }
 
       const claimsActiveRun = !currentRunIdRef.current;
       if (claimsActiveRun) {
@@ -1550,7 +1576,7 @@ export function useChatController({
       setIsSending(true);
       armPendingRunTimeout();
 
-      if (images.length > 0) {
+      if (images.length > 0 && !shouldHideMessage(uiMsg)) {
         cacheMessageImages(
           sessionKey,
           uiMsg.text,
@@ -1645,14 +1671,23 @@ export function useChatController({
       try {
         const ready = await ensureConnectionReadyForSend();
         if (!ready) return false;
-        submitMessage(text, images);
+        const prepared = await preparePendingImagesForSend(images);
+        if (prepared.changed) {
+          setPendingImages(prepared.images);
+        }
+        submitMessage(text, prepared.images);
         return true;
       } finally {
         sendPreflightInFlightRef.current = false;
         setIsPreparingSend(false);
       }
     },
-    [ensureConnectionReadyForSend, history.sessionKey, submitMessage],
+    [
+      ensureConnectionReadyForSend,
+      history.sessionKey,
+      setPendingImages,
+      submitMessage,
+    ],
   );
 
   const {
@@ -2446,5 +2481,8 @@ export function useChatController({
     resolveApproval,
     agentActivityRef,
     agentActiveCount,
+    childSessionActivityRef,
+    childSessionActivityVersion,
+    clearChildSessionActivities,
   };
 }

@@ -97,6 +97,22 @@ describe('historyLineage', () => {
     ]);
   });
 
+  it('filters cached user messages hidden by transcript suppression rules', () => {
+    const snapshots = [
+      makeSnapshot({
+        storageKey: 'hidden-user',
+        sessionId: 'sess-hidden',
+        updatedAt: 10,
+        messages: [
+          { id: 'u1', role: 'user', text: 'OpenClaw runtime context\n\ninternal', timestampMs: 1 },
+          { id: 'a1', role: 'assistant', text: 'real reply', timestampMs: 2 },
+        ],
+      }),
+    ];
+
+    expect(buildCachedLineageMessages(snapshots).map((message) => message.id)).toEqual(['a1']);
+  });
+
   it('filters cached delivery-mirror assistant messages while keeping the real reply', () => {
     const snapshots = [
       {

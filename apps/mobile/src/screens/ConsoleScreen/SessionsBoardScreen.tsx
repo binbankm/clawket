@@ -231,7 +231,7 @@ export function SessionsBoardScreen(): React.JSX.Element {
 
   const load = useCallback(async (mode: 'initial' | 'manual' | 'poll' = 'manual') => {
     if (mode === 'initial') setLoading(true);
-    else setRefreshing(true);
+    else if (mode === 'manual') setRefreshing(true);
     try {
       const payload = await gateway.request<SessionListPayload>('sessions.list', {
         limit: 200,
@@ -246,7 +246,7 @@ export function SessionsBoardScreen(): React.JSX.Element {
       setError(message);
     } finally {
       setLoading(false);
-      setRefreshing(false);
+      if (mode === 'manual') setRefreshing(false);
     }
   }, [currentAgentId, currentAgentName, gateway, t]);
 

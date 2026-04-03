@@ -4,10 +4,9 @@ import { SessionInfo } from '../../../types';
 import { AgentInfo } from '../../../types/agent';
 import { sessionLabel } from '../../../utils/chat-message';
 import {
-  isPrimaryCachedSessionKey,
-  PRIMARY_CACHED_AGENT_ID,
-  sanitizePrimarySessionSnapshot,
-} from '../../../utils/primary-session-cache';
+  isSessionKeyInAgentScope,
+  sanitizeSnapshotForAgent,
+} from '../../../utils/agent-session-scope';
 import { agentIdFromSessionKey } from './agentActivity';
 import { buildInitialAgentIdentity } from './chatControllerUtils';
 import { pickAgentIdentityAvatarUri, resolveAgentAvatarUri } from '../../../utils/agent-avatar-uri';
@@ -84,18 +83,14 @@ export function useChatAgentIdentity({
 
   useEffect(() => {
     if (!gatewayConfigId) return;
-    const shouldHydrateFromPrimaryCache = (
-      currentAgentId === PRIMARY_CACHED_AGENT_ID
-      && (!sessionKey || isPrimaryCachedSessionKey(sessionKey))
-    );
-    if (!shouldHydrateFromPrimaryCache) return;
+    if (sessionKey && !isSessionKeyInAgentScope(sessionKey, currentAgentId)) return;
     let cancelled = false;
 
     Promise.all([
-      StorageService.getLastOpenedSessionSnapshot(gatewayConfigId)
-        .then((snapshot) => sanitizePrimarySessionSnapshot(snapshot))
+      StorageService.getLastOpenedSessionSnapshot(gatewayConfigId, currentAgentId)
+        .then((snapshot) => sanitizeSnapshotForAgent(snapshot, currentAgentId))
         .catch(() => null),
-      StorageService.getCachedAgentIdentity(gatewayConfigId, PRIMARY_CACHED_AGENT_ID).catch(() => null),
+      StorageService.getCachedAgentIdentity(gatewayConfigId, currentAgentId).catch(() => null),
     ])
       .then(([snapshot, cachedIdentity]) => {
         if (cancelled) return;
@@ -188,7 +183,7 @@ export function useChatAgentIdentity({
 
   useEffect(() => {
     if (!gatewayConfigId || !sessionKey) return;
-    if (!isPrimaryCachedSessionKey(sessionKey)) return;
+    if (!isSessionKeyInAgentScope(sessionKey, currentAgentId)) return;
     const snapshotAgentId = agentIdFromSessionKey(sessionKey) ?? currentAgentId;
     const snapshotLabel = currentSessionInfo
       ? sessionLabel(currentSessionInfo, {
@@ -226,13 +221,9 @@ export function useChatAgentIdentity({
 
   useEffect(() => {
     if (!gatewayConfigId) return;
-    const shouldPersistPrimaryIdentity = (
-      currentAgentId === PRIMARY_CACHED_AGENT_ID
-      && (!sessionKey || isPrimaryCachedSessionKey(sessionKey))
-    );
-    if (!shouldPersistPrimaryIdentity) return;
+    if (sessionKey && !isSessionKeyInAgentScope(sessionKey, currentAgentId)) return;
     const cachedIdentity = {
-      agentId: PRIMARY_CACHED_AGENT_ID,
+      agentId: currentAgentId,
       updatedAt: Date.now(),
       agentName: agentIdentity.displayName || undefined,
       agentEmoji: agentIdentity.emoji || undefined,
@@ -240,7 +231,7 @@ export function useChatAgentIdentity({
     };
     const signature = JSON.stringify({
       scope: gatewayConfigId,
-      agentId: PRIMARY_CACHED_AGENT_ID,
+      agentId: currentAgentId,
       agentName: cachedIdentity.agentName,
       agentEmoji: cachedIdentity.agentEmoji,
       agentAvatarUri: cachedIdentity.agentAvatarUri,

@@ -23,6 +23,13 @@ import {
   applyToolStart as applyActivityToolStart,
 } from './agentActivity';
 import {
+  applyChildDelta,
+  applyChildRunEnd,
+  applyChildRunStart,
+  applyChildToolStart,
+  ChildSessionActivity,
+} from './childSessionActivity';
+import {
   clearSessionRunState,
   markSessionRunDelta,
   markSessionRunStarted,
@@ -72,6 +79,8 @@ type Params = {
   execApprovalEnabled: boolean;
   setActivityLabel: (label: string | null) => void;
   agentActivityRef: RefObject<Map<string, AgentActivity>>;
+  childSessionActivityRef: RefObject<Map<string, ChildSessionActivity>>;
+  onChildSessionActivityChange: () => void;
   onAgentActiveCountChange: (delta: 1 | -1) => void;
   resetAgentActiveCount: () => void;
   onRunSignal?: () => void;
@@ -218,6 +227,8 @@ export function useGatewayChatEvents(params: Params) {
     execApprovalEnabled,
     setActivityLabel,
     agentActivityRef,
+    childSessionActivityRef,
+    onChildSessionActivityChange,
     onAgentActiveCountChange,
     resetAgentActiveCount,
     onRunSignal,
@@ -390,6 +401,8 @@ export function useGatewayChatEvents(params: Params) {
       if (state !== 'ready' && prevState === 'ready') {
         const lostRunId = currentRunIdRef.current;
         agentActivityRef.current.clear();
+        childSessionActivityRef.current.clear();
+        onChildSessionActivityChange();
         resetAgentActiveCount();
         const key = sessionKeyRef.current;
         if (key && currentRunIdRef.current) {
@@ -442,6 +455,10 @@ export function useGatewayChatEvents(params: Params) {
           onAgentActiveCountChange(1);
         }
       }
+      if (actAgentId && key.includes(':subagent:')) {
+        applyChildRunStart(childSessionActivityRef.current, key);
+        onChildSessionActivityChange();
+      }
       if (!sessionKeysMatch(key, sessionKeyRef.current)) return;
       if (currentRunIdRef.current && currentRunIdRef.current !== runId && !adoptPendingOptimisticRunId(key, runId)) {
         return;
@@ -464,6 +481,10 @@ export function useGatewayChatEvents(params: Params) {
       const actAgentId = agentIdFromSessionKey(key);
       if (actAgentId && actAgentId !== currentAgentId) {
         applyActivityDelta(agentActivityRef.current, actAgentId, text);
+      }
+      if (key.includes(':subagent:')) {
+        applyChildDelta(childSessionActivityRef.current, key, text);
+        onChildSessionActivityChange();
       }
       if (!sessionKeysMatch(key, sessionKeyRef.current)) return;
       if (currentRunIdRef.current && currentRunIdRef.current !== runId && !adoptPendingOptimisticRunId(key, runId)) return;
@@ -490,6 +511,10 @@ export function useGatewayChatEvents(params: Params) {
       const actAgentId = agentIdFromSessionKey(key);
       if (actAgentId && actAgentId !== currentAgentId && phase === 'start') {
         applyActivityToolStart(agentActivityRef.current, actAgentId, name || 'tool');
+      }
+      if (phase === 'start' && key.includes(':subagent:')) {
+        applyChildToolStart(childSessionActivityRef.current, key, name || 'tool');
+        onChildSessionActivityChange();
       }
       if (!sessionKeysMatch(key, sessionKeyRef.current)) {
         if (showDebug) dbg(`drop tool UI update: session mismatch (evt=${key} cur=${sessionKeyRef.current})`);
@@ -595,6 +620,10 @@ export function useGatewayChatEvents(params: Params) {
           if (applyRunEnd(agentActivityRef.current, actAgentId)) {
             onAgentActiveCountChange(-1);
           }
+        }
+        if (key.includes(':subagent:')) {
+          applyChildRunEnd(childSessionActivityRef.current, key);
+          onChildSessionActivityChange();
         }
       }
       if (key && !sessionKeysMatch(key, sessionKeyRef.current)) {
@@ -713,6 +742,10 @@ export function useGatewayChatEvents(params: Params) {
             onAgentActiveCountChange(-1);
           }
         }
+        if (key.includes(':subagent:')) {
+          applyChildRunEnd(childSessionActivityRef.current, key);
+          onChildSessionActivityChange();
+        }
       }
       if (key && !sessionKeysMatch(key, sessionKeyRef.current)) {
         if (showDebug) dbg(`drop aborted UI update: session mismatch (evt=${key} cur=${sessionKeyRef.current})`);
@@ -773,6 +806,10 @@ export function useGatewayChatEvents(params: Params) {
           if (applyRunEnd(agentActivityRef.current, actAgentId)) {
             onAgentActiveCountChange(-1);
           }
+        }
+        if (key.includes(':subagent:')) {
+          applyChildRunEnd(childSessionActivityRef.current, key);
+          onChildSessionActivityChange();
         }
       }
       if (key && !sessionKeysMatch(key, sessionKeyRef.current)) {

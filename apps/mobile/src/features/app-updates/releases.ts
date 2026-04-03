@@ -10,7 +10,7 @@ export type AppUpdateAnnouncementAction =
     }
   | {
       type: 'navigate_console';
-      screen: 'CronWizard' | 'SessionsBoard' | 'ModelList' | 'Nodes';
+      screen: 'CronWizard' | 'SessionsBoard' | 'AgentSessionsBoard' | 'ModelList' | 'Nodes';
     }
   | {
       type: 'navigate_config';
@@ -45,7 +45,42 @@ export const DEFAULT_APP_UPDATE_DEBUG_HINT =
 export const APP_UPDATE_RELEASES: AppUpdateRelease[] = [
   {
     version: '1.8.0',
-    releasedAt: '2026-03-31',
+    releasedAt: '2026-04-02',
+    entries: [
+      {
+        id: 'agent-sessions-board-refresh',
+        emoji: '🪟',
+        title: 'All-new Agent & Session Board',
+        subtitle: 'A calmer, smarter home for your recent agents and conversations.',
+        action: {
+          type: 'navigate_console',
+          screen: 'AgentSessionsBoard',
+        },
+      },
+      {
+        id: 'repair-agent-permissions',
+        emoji: '🔐',
+        title: 'One-click repair agent permissions',
+        subtitle: 'Give agent full authorization so permissions stop getting in the way.',
+        action: {
+          type: 'navigate_config',
+          screen: 'OpenClawConfig',
+        },
+      },
+      {
+        id: 'custom-app-icon',
+        emoji: '🎨',
+        title: 'Custom App Icon',
+        subtitle: 'Change your app icon anytime from Settings.',
+        action: {
+          type: 'none',
+        },
+      },
+    ],
+  },
+  {
+    version: '1.7.0',
+    releasedAt: '2026-03-29',
     entries: [
       {
         id: 'openclaw-diagnostics-auto-repair',

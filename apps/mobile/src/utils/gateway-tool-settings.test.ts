@@ -1,4 +1,10 @@
-import { parseGatewayToolSettings, buildGatewayToolPatch, getGatewayDisabledToolIds, GatewayToolSettings } from './gateway-tool-settings';
+import {
+  parseGatewayToolSettings,
+  buildGatewayToolPatch,
+  buildGatewayExecPatch,
+  getGatewayDisabledToolIds,
+  GatewayToolSettings,
+} from './gateway-tool-settings';
 
 describe('parseGatewayToolSettings', () => {
   it('returns defaults for null config', () => {
@@ -165,6 +171,23 @@ describe('buildGatewayToolPatch', () => {
     const exec = tools.exec as Record<string, unknown>;
     expect(exec.security).toBe('deny');
     expect(exec.ask).toBe('on-miss');
+  });
+});
+
+describe('buildGatewayExecPatch', () => {
+  it('builds a minimal exec-only patch', () => {
+    const patch = buildGatewayExecPatch({
+      execSecurity: 'full',
+      execAsk: 'on-miss',
+    });
+    expect(patch).toEqual({
+      tools: {
+        exec: {
+          security: 'full',
+          ask: 'on-miss',
+        },
+      },
+    });
   });
 });
 

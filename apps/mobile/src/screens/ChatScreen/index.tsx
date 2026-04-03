@@ -25,10 +25,10 @@ type ChatScreenNavigation = DrawerNavigationProp<ChatDrawerParamList, 'ChatMain'
 
 type ChatScreenProps = {
   openSidebarRequestAt?: number | null;
-  openAgentsModalRequestAt?: number | null;
+  openAgentSessionsBoardRequestAt?: number | null;
 };
 
-export function ChatScreen({ openSidebarRequestAt, openAgentsModalRequestAt }: ChatScreenProps): React.JSX.Element {
+export function ChatScreen({ openSidebarRequestAt, openAgentSessionsBoardRequestAt }: ChatScreenProps): React.JSX.Element {
   const navigation = useNavigation<ChatScreenNavigation>();
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
@@ -36,6 +36,7 @@ export function ChatScreen({ openSidebarRequestAt, openAgentsModalRequestAt }: C
   const { debugMode } = useAppContext();
   const isFocused = useIsFocused();
   const handledRequestRef = React.useRef<number | null>(null);
+  const handledBoardRequestRef = React.useRef<number | null>(null);
   const checkedModeRef = React.useRef<string | null>(null);
   const [announcement, setAnnouncement] = React.useState<AppUpdateAnnouncement | null>(null);
   const [announcementVisible, setAnnouncementVisible] = React.useState(false);
@@ -47,6 +48,15 @@ export function ChatScreen({ openSidebarRequestAt, openAgentsModalRequestAt }: C
     handledRequestRef.current = openSidebarRequestAt;
     navigation.openDrawer();
   }, [navigation, openSidebarRequestAt]);
+
+  React.useEffect(() => {
+    if (!openAgentSessionsBoardRequestAt) return;
+    if (handledBoardRequestRef.current === openAgentSessionsBoardRequestAt) return;
+    handledBoardRequestRef.current = openAgentSessionsBoardRequestAt;
+    const parentNavigation = navigation.getParent();
+    if (!parentNavigation) return;
+    parentNavigation.dispatch(CommonActions.navigate({ name: 'AgentSessionsBoard' }));
+  }, [navigation, openAgentSessionsBoardRequestAt]);
 
   React.useEffect(() => {
     if (!isFocused) return;
@@ -148,6 +158,12 @@ export function ChatScreen({ openSidebarRequestAt, openAgentsModalRequestAt }: C
     );
   }, [navigation]);
 
+  const handleOpenAgentSessionsBoard = React.useCallback(() => {
+    const parentNavigation = navigation.getParent();
+    if (!parentNavigation) return;
+    parentNavigation.dispatch(CommonActions.navigate({ name: 'AgentSessionsBoard' }));
+  }, [navigation]);
+
   const closeAnnouncement = React.useCallback(async () => {
     if (!debugMode) {
       await markCurrentAppUpdateAnnouncementShown();
@@ -211,7 +227,7 @@ export function ChatScreen({ openSidebarRequestAt, openAgentsModalRequestAt }: C
         onAddGatewayConnection={handleOpenAddGatewayConnection}
         onOpenCustomConnection={handleOpenCustomConnection}
         onManageAgents={handleOpenManageAgents}
-        openAgentsModalRequestAt={openAgentsModalRequestAt}
+        onOpenAgentSessionsBoard={handleOpenAgentSessionsBoard}
       />
       <AppUpdateAnnouncementModal
         visible={announcementVisible}

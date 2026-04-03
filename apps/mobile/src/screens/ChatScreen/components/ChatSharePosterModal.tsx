@@ -4,6 +4,7 @@ import {
   Alert,
   Image,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -193,7 +194,21 @@ export function ChatSharePosterModal({
 
   const capture = useCallback(async () => {
     if (!posterRef.current) return null;
-    return captureRef(posterRef, { format: 'png', quality: 1 });
+    try {
+      return await captureRef(posterRef, { format: 'png', quality: 1 });
+    } catch (error) {
+      if (Platform.OS !== 'ios') {
+        throw error;
+      }
+
+      // `drawViewHierarchyInRect` can fail for complex markdown trees on iOS,
+      // especially when the renderer introduces nested scroll containers (for example tables).
+      return captureRef(posterRef, {
+        format: 'png',
+        quality: 1,
+        useRenderInContext: true,
+      });
+    }
   }, []);
 
   const handleSave = useCallback(async () => {

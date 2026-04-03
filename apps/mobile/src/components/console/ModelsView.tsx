@@ -29,6 +29,7 @@ import { useGatewayOverlay } from '../../contexts/GatewayOverlayContext';
 import { GatewayClient } from '../../services/gateway';
 import { useGatewayPatch } from '../../hooks/useGatewayPatch';
 import { analyticsEvents } from '../../services/analytics/events';
+import { scheduleAutomaticAppReview } from '../../services/auto-app-review';
 import { useAppTheme } from '../../theme';
 import { FontSize, FontWeight, Radius, Shadow, Space } from '../../theme/tokens';
 import { addFallbackModel, moveFallbackModel, removeFallbackModelAt, sanitizeFallbackModels } from '../../utils/fallback-models';
@@ -814,8 +815,18 @@ export function ModelsView({
         Alert.alert(
           t('common:Saved'),
           t('Model was added, but it is not visible in this list. Current allowlist settings may be filtering it out.'),
+          [
+            {
+              text: t('common:Close'),
+              onPress: () => {
+                scheduleAutomaticAppReview('model_added');
+              },
+            },
+          ],
         );
+        return;
       }
+      scheduleAutomaticAppReview('model_added');
     }
   }, [addModelDraft, addModelProvider, config, configHash, loadModels, patchWithRestart, t]);
 

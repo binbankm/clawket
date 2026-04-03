@@ -1,4 +1,5 @@
 import i18next from 'i18next';
+import { UiMessage } from '../types/chat';
 import { SessionInfo } from '../types';
 
 export const SILENT_REPLY_TOKEN = 'NO_REPLY';
@@ -167,6 +168,20 @@ type FormatMessageTextOptions = {
   trim?: boolean;
 };
 
+type MessageVisibilityRule = {
+  id: string;
+  roles?: readonly UiMessage['role'][];
+  matches: (input: { role: UiMessage['role']; text: string }) => boolean;
+};
+
+const HIDDEN_MESSAGE_RULES: readonly MessageVisibilityRule[] = [
+  {
+    id: 'user-openclaw-runtime-context-prefix',
+    roles: ['user'],
+    matches: ({ text }) => text.startsWith('OpenClaw runtime context'),
+  },
+] as const;
+
 export function formatMessageText(text: string, options: FormatMessageTextOptions = {}): string {
   let result = text;
 
@@ -198,6 +213,27 @@ export function sanitizeUserMessageText(text: string): string {
     stripGatewayPrefixes: true,
     stripBracketedSystemMessageBlocks: true,
   });
+}
+
+export function findHiddenMessageRule(
+  input: { role: UiMessage['role']; text: string },
+): string | null {
+  const normalizedText = input.role === 'user'
+    ? sanitizeUserMessageText(input.text)
+    : input.text;
+
+  for (const rule of HIDDEN_MESSAGE_RULES) {
+    if (rule.roles && !rule.roles.includes(input.role)) continue;
+    if (rule.matches({ role: input.role, text: normalizedText })) {
+      return rule.id;
+    }
+  }
+
+  return null;
+}
+
+export function shouldHideMessage(input: { role: UiMessage['role']; text: string }): boolean {
+  return findHiddenMessageRule(input) !== null;
 }
 
 export function sanitizeSilentPreviewText(text: string | null | undefined): string | undefined {
@@ -321,8 +357,15 @@ function cleanDetail(raw: string): string {
   s = s.replace(/^(?:discord|slack|telegram|feishu|whatsapp|signal|imessage|webchat|googlechat)\s*(?:thread)?\s*/i, '');
   // Strip channel prefix patterns: "telegram/", "discord:", "飞书：", "飞书:", etc.
   s = s.replace(/^(?:telegram|discord|slack|feishu|whatsapp|signal|imessage|webchat|googlechat|飞书)[:/：/]\s*/i, '');
+  // Trim stray separators left behind by prefix stripping.
+  s = s.replace(/^[\s/\\:|,·>]+/, '');
+  // Strip common generated group prefixes.
+  s = s.replace(/^(?:g|group|channel|thread|dm)[-:_/\s]+/i, '');
   // Strip leading # if it's followed by content
   s = s.replace(/^#\s*/, '');
+  s = s.replace(/^[\s/\\:|,\-.·>]+/, '');
+  s = s.replace(/_+/g, ' ');
+  s = s.replace(/\s+/g, ' ');
   return s.trim();
 }
 
@@ -343,6 +386,73 @@ export function formatMainSessionLabel(agentName?: string | null): string {
   return trimmedAgentName ? `${trimmedAgentName} (${mainSessionLabel})` : mainSessionLabel;
 }
 
+function formatChannelName(channel: string): string {
+  const normalized = channel.trim().toLowerCase();
+  if (normalized === 'feishu' || normalized === 'lark') return 'Feishu';
+  if (normalized === 'whatsapp') return 'WhatsApp';
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+}
+
+type ChannelSessionKind = 'direct' | 'group' | 'channel' | 'thread' | 'unknown';
+
+function inferChannelSessionKind(s: SessionInfo): ChannelSessionKind {
+  const rawText = [s.label, s.derivedTitle, s.title, s.displayName].filter(Boolean).join(' ');
+  if (/\bthread\b/i.test(rawText)) return 'thread';
+  if (s.kind === 'direct') return 'direct';
+  if (s.key.includes(':channel:')) return 'channel';
+  if (s.kind === 'group' || s.key.includes(':group:')) return 'group';
+  return 'unknown';
+}
+
+function formatChannelSessionBase(channel: string, kind: ChannelSessionKind): string {
+  const channelName = formatChannelName(channel);
+  if (kind === 'direct') return `${channelName} DM`;
+  if (kind === 'thread') return `${channelName} Thread`;
+  if (kind === 'channel') return `${channelName} Channel`;
+  if (kind === 'group') return `${channelName} Group`;
+  return channelName;
+}
+
+function detailLooksReadable(detail: string): boolean {
+  if (!detail) return false;
+  if (/^[0-9]{5,}$/u.test(detail)) return false;
+  if (/^(?:ou|oc|om|chat|group|channel|thread|user|space|guild|server)[-_:/]?[a-z0-9._:-]{6,}$/iu.test(detail)) {
+    return false;
+  }
+  if (/^[a-z0-9._:-]{12,}$/iu.test(detail) && !/[ _-]/.test(detail)) {
+    return false;
+  }
+  const stripped = detail.replace(/\s+/g, '');
+  const digits = (stripped.match(/\d/g) ?? []).length;
+  if (stripped.length >= 8 && digits / stripped.length > 0.45) return false;
+  return /[\p{L}\p{Script=Han}]/u.test(detail);
+}
+
+function trimReadableDetail(detail: string): string {
+  const trimmed = detail.trim();
+  if (!trimmed) return '';
+  return trimmed.length > 14 ? `${trimmed.slice(0, 13).trimEnd()}…` : trimmed;
+}
+
+function resolveChannelSessionDetail(s: SessionInfo): string {
+  const raw = s.derivedTitle || s.title || s.displayName || '';
+  const detail = cleanDetail(raw).replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!detailLooksReadable(detail)) return '';
+  return trimReadableDetail(detail);
+}
+
+function formatGeneratedChannelSessionLabel(s: SessionInfo): string {
+  const channelName = s.channel ? formatChannelName(s.channel) : '';
+  const base = s.channel ? formatChannelSessionBase(s.channel, inferChannelSessionKind(s)) : '';
+  const detail = resolveChannelSessionDetail(s);
+  if (!base) return detail || channelName;
+  if (!detail) return base;
+  const normalizedBase = base.toLowerCase();
+  if (detail.toLowerCase() === channelName.toLowerCase()) return base;
+  if (detail.toLowerCase() === normalizedBase) return base;
+  return `${base} · ${detail}`;
+}
+
 export function sessionLabel(s: SessionInfo, options?: { currentAgentName?: string | null }): string {
   const explicitLabel = s.label?.trim();
   const isMainSession = /^agent:[^:]+:main$/.test(s.key);
@@ -355,9 +465,11 @@ export function sessionLabel(s: SessionInfo, options?: { currentAgentName?: stri
     if (s.channel) {
       const cleaned = cleanDetail(explicitLabel);
       const looksGenerated = cleaned.length > 0 && cleaned !== explicitLabel;
-      if (!looksGenerated) return explicitLabel;
-      const channelName = s.channel.charAt(0).toUpperCase() + s.channel.slice(1);
-      return cleaned ? `${channelName} ${cleaned}` : channelName;
+      const looksMachineGenerated = !detailLooksReadable(cleaned || explicitLabel);
+      if (!looksGenerated && !looksMachineGenerated) {
+        return explicitLabel;
+      }
+      return formatGeneratedChannelSessionLabel({ ...s, derivedTitle: cleaned || s.derivedTitle });
     }
 
     if (s.key.includes(':cron:')) {
@@ -375,10 +487,7 @@ export function sessionLabel(s: SessionInfo, options?: { currentAgentName?: stri
 
   // Format channel-based sessions: "Telegram subject", "Discord subject", etc.
   if (s.channel) {
-    const channelName = s.channel.charAt(0).toUpperCase() + s.channel.slice(1);
-    const raw = s.derivedTitle || s.displayName || '';
-    const detail = cleanDetail(raw);
-    return detail ? `${channelName} ${detail}` : channelName;
+    return formatGeneratedChannelSessionLabel(s);
   }
 
   // Format subagent sessions: "Subagent: label"

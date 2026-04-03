@@ -3,6 +3,7 @@ import { UiMessage } from '../../../types/chat';
 import {
   isAssistantDeliveryMirrorMessage,
   isAssistantSilentReplyMessage,
+  shouldHideMessage,
 } from '../../../utils/chat-message';
 
 function buildMessageDedupKey(message: UiMessage): string {
@@ -31,7 +32,8 @@ export function buildCachedLineageMessages(
     .filter((snapshot) => !excludeSessionId || snapshot.meta.sessionId !== excludeSessionId)
     .flatMap((snapshot) => snapshot.messages.map(cachedMessageToUiMessage))
     .filter((message) => !isAssistantSilentReplyMessage(message))
-    .filter((message) => !isAssistantDeliveryMirrorMessage(message));
+    .filter((message) => !isAssistantDeliveryMirrorMessage(message))
+    .filter((message) => !shouldHideMessage(message));
 }
 
 export function mergeHistoryWithCachedLineage(params: {

@@ -326,7 +326,7 @@ export function AgentDetailScreen(): React.JSX.Element {
 
     Alert.alert(
       tCommon('Confirm Save'),
-      tCommon('Saving this config will restart Gateway and may interrupt active tasks like chats, cron jobs, or sub-agents. Continue?'),
+      tCommon('This will restart Gateway. Continue?'),
       [
         { text: tCommon('Cancel'), style: 'cancel' },
         {

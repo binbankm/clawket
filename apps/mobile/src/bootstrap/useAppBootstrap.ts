@@ -10,8 +10,8 @@ import { DEFAULT_CHAT_APPEARANCE } from '../features/chat-appearance/defaults';
 import {
   buildPrimarySessionPreview,
   PRIMARY_CACHED_AGENT_ID,
-  sanitizePrimarySessionSnapshot,
 } from '../utils/primary-session-cache';
+import { sanitizeSnapshotForAgent } from '../utils/agent-session-scope';
 
 type Props = {
   gateway: GatewayClient;
@@ -131,9 +131,7 @@ export function useAppBootstrap({ gateway, nodeClient }: Props) {
         return StorageService.getLastOpenedSessionSnapshot(gatewayScopeId, initialAgent)
           .catch(() => null)
           .then(async (rawSnapshot) => {
-            const snapshot = initialAgent === PRIMARY_CACHED_AGENT_ID
-              ? sanitizePrimarySessionSnapshot(rawSnapshot)
-              : rawSnapshot;
+            const snapshot = sanitizeSnapshotForAgent(rawSnapshot, initialAgent);
             const cachedAgentIdentity = await StorageService.getCachedAgentIdentity(
               gatewayScopeId,
               initialAgent,

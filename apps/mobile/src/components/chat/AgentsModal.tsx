@@ -3,7 +3,7 @@ import { Animated, Easing, Platform, Pressable, StyleSheet, Text, TouchableOpaci
 import * as Haptics from 'expo-haptics';
 import { useTranslation } from 'react-i18next';
 import { BottomSheetBackdrop, BottomSheetModal, BottomSheetScrollView } from '@gorhom/bottom-sheet';
-import { Check, ChevronRight, Cloud, Link2, Plus, X } from 'lucide-react-native';
+import { Check, ChevronRight, Cloud, Link2, Plus, Table2, X } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FullWindowOverlay } from 'react-native-screens';
 import type { GatewayMode } from '../../types';
@@ -44,6 +44,7 @@ type Props = {
   onAddGateway?: () => void;
   onNewAgent?: () => void;
   onManageAgents?: () => void;
+  onOpenAgentSessionsBoard?: () => void;
 };
 
 function ModalContainer({ children }: React.PropsWithChildren): React.JSX.Element {
@@ -129,6 +130,7 @@ export function AgentsModal({
   onAddGateway,
   onNewAgent,
   onManageAgents,
+  onOpenAgentSessionsBoard,
 }: Props): React.JSX.Element {
   const { t } = useTranslation(['chat', 'common', 'config']);
   const { theme } = useAppTheme();
@@ -140,6 +142,7 @@ export function AgentsModal({
   const hasGatewayConnections = gateways.length > 0;
   const hasGatewaySection = gatewayLoading || hasGatewayConnections;
   const shouldShowAgentSection = hasGatewayConnections;
+  const headerActionWidth = onOpenAgentSessionsBoard ? 80 : 40;
   const minimumContentHeight = useMemo(
     () => Math.max(280, Math.floor(windowHeight / 3)),
     [windowHeight],
@@ -193,12 +196,26 @@ export function AgentsModal({
         backgroundStyle={styles.sheetBackground}
       >
         <View style={styles.header}>
-          <View style={styles.headerSpacer} />
+          <View style={[styles.headerSpacer, { width: headerActionWidth }]} />
           <Text style={styles.title} numberOfLines={1}>{t('Agents & Gateways')}</Text>
-          <IconButton
-            icon={<X size={20} color={theme.colors.textMuted} strokeWidth={2} />}
-            onPress={() => bottomSheetRef.current?.dismiss()}
-          />
+          <View style={styles.headerActions}>
+            {onOpenAgentSessionsBoard ? (
+              <IconButton
+                icon={<Table2 size={20} color={theme.colors.textMuted} strokeWidth={2} />}
+                onPress={() => {
+                  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  bottomSheetRef.current?.dismiss();
+                  onOpenAgentSessionsBoard();
+                }}
+                size={40}
+              />
+            ) : null}
+            <IconButton
+              icon={<X size={20} color={theme.colors.textMuted} strokeWidth={2} />}
+              onPress={() => bottomSheetRef.current?.dismiss()}
+              size={40}
+            />
+          </View>
         </View>
 
         <BottomSheetScrollView
@@ -208,72 +225,6 @@ export function AgentsModal({
             { paddingBottom: Math.max(insets.bottom, Space.lg) + Space.lg },
           ]}
         >
-          {hasGatewaySection ? (
-            <View style={styles.section}>
-              <Text style={styles.sectionLabel}>{t('Gateways')}</Text>
-              <View style={styles.sectionCard}>
-                {gatewayLoading ? (
-                  <Text style={styles.loadingText}>{t('common:Loading...')}</Text>
-                ) : (
-                  gateways.map((gateway, index) => (
-                    <React.Fragment key={gateway.configId}>
-                      <Pressable
-                        onPress={() => {
-                          if (gateway.isCurrent) return;
-                          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                          void onSelectGateway?.(gateway.configId);
-                          bottomSheetRef.current?.dismiss();
-                        }}
-                        style={({ pressed }) => [
-                          styles.gatewayRow,
-                          pressed && !gateway.isCurrent && styles.rowPressed,
-                        ]}
-                      >
-                        <View style={styles.gatewayIconWrap}>
-                          {gateway.mode === 'relay' ? (
-                            <Cloud size={16} color={theme.colors.primary} strokeWidth={2} />
-                          ) : (
-                            <Link2 size={16} color={theme.colors.primary} strokeWidth={2} />
-                          )}
-                        </View>
-                        <View style={styles.gatewayInfo}>
-                          <View style={styles.gatewayTitleRow}>
-                            <Text style={styles.gatewayName} numberOfLines={1}>{gateway.name}</Text>
-                            {gateway.isCurrent ? (
-                              <View style={styles.currentBadge}>
-                                <Text style={styles.currentBadgeText}>{t('Current')}</Text>
-                              </View>
-                            ) : null}
-                          </View>
-                        </View>
-                        {gateway.isCurrent ? (
-                          <Check size={18} color={theme.colors.primary} strokeWidth={2.4} />
-                        ) : (
-                          <ChevronRight size={16} color={theme.colors.textSubtle} strokeWidth={2} />
-                        )}
-                      </Pressable>
-                      {index < gateways.length - 1 ? <View style={styles.divider} /> : null}
-                    </React.Fragment>
-                  ))
-                )}
-              </View>
-              {onAddGateway ? (
-                <TouchableOpacity
-                  style={styles.addGatewayRow}
-                  onPress={() => {
-                    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    bottomSheetRef.current?.dismiss();
-                    onAddGateway();
-                  }}
-                  activeOpacity={0.7}
-                >
-                  <Plus size={18} color={theme.colors.primary} strokeWidth={2} />
-                  <Text style={styles.addGatewayText}>{t('Add OpenClaw Connection', { ns: 'config' })}</Text>
-                </TouchableOpacity>
-              ) : null}
-            </View>
-          ) : null}
-
           {shouldShowAgentSection ? (
             <View style={styles.agentGroup}>
               <View style={styles.agentSection}>
@@ -364,6 +315,72 @@ export function AgentsModal({
             </View>
           ) : null}
 
+          {hasGatewaySection ? (
+            <View style={styles.section}>
+              <Text style={styles.sectionLabel}>{t('Gateways')}</Text>
+              <View style={styles.sectionCard}>
+                {gatewayLoading ? (
+                  <Text style={styles.loadingText}>{t('common:Loading...')}</Text>
+                ) : (
+                  gateways.map((gateway, index) => (
+                    <React.Fragment key={gateway.configId}>
+                      <Pressable
+                        onPress={() => {
+                          if (gateway.isCurrent) return;
+                          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                          void onSelectGateway?.(gateway.configId);
+                          bottomSheetRef.current?.dismiss();
+                        }}
+                        style={({ pressed }) => [
+                          styles.gatewayRow,
+                          pressed && !gateway.isCurrent && styles.rowPressed,
+                        ]}
+                      >
+                        <View style={styles.gatewayIconWrap}>
+                          {gateway.mode === 'relay' ? (
+                            <Cloud size={16} color={theme.colors.primary} strokeWidth={2} />
+                          ) : (
+                            <Link2 size={16} color={theme.colors.primary} strokeWidth={2} />
+                          )}
+                        </View>
+                        <View style={styles.gatewayInfo}>
+                          <View style={styles.gatewayTitleRow}>
+                            <Text style={styles.gatewayName} numberOfLines={1}>{gateway.name}</Text>
+                            {gateway.isCurrent ? (
+                              <View style={styles.currentBadge}>
+                                <Text style={styles.currentBadgeText}>{t('Current')}</Text>
+                              </View>
+                            ) : null}
+                          </View>
+                        </View>
+                        {gateway.isCurrent ? (
+                          <Check size={18} color={theme.colors.primary} strokeWidth={2.4} />
+                        ) : (
+                          <ChevronRight size={16} color={theme.colors.textSubtle} strokeWidth={2} />
+                        )}
+                      </Pressable>
+                      {index < gateways.length - 1 ? <View style={styles.divider} /> : null}
+                    </React.Fragment>
+                  ))
+                )}
+              </View>
+              {onAddGateway ? (
+                <TouchableOpacity
+                  style={styles.addGatewayRow}
+                  onPress={() => {
+                    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    bottomSheetRef.current?.dismiss();
+                    onAddGateway();
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Plus size={18} color={theme.colors.primary} strokeWidth={2} />
+                  <Text style={styles.addGatewayText}>{t('Add OpenClaw Connection', { ns: 'config' })}</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+          ) : null}
+
         </BottomSheetScrollView>
       </BottomSheetModal>
     </ModalContainer>
@@ -399,8 +416,11 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['theme']['colors'])
       gap: Space.sm,
     },
     headerSpacer: {
-      width: 44,
-      height: 44,
+      height: 40,
+    },
+    headerActions: {
+      flexDirection: 'row',
+      alignItems: 'center',
     },
     title: {
       flex: 1,

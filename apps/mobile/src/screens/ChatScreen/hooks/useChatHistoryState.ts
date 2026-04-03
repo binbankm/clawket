@@ -16,6 +16,7 @@ import {
   isAssistantSilentReplyMessage,
   parseMessageTimestamp,
   sanitizeUserMessageText,
+  shouldHideMessage,
   stableMessageId,
 } from '../../../utils/chat-message';
 import { formatToolOneLinerLocalized, stripToolStatusPrefix } from '../../../utils/tool-display';
@@ -35,9 +36,9 @@ import {
 } from './startupPreview';
 import { useChatLocalHistoryPaging } from './useChatLocalHistoryPaging';
 import {
-  isPrimaryCachedSessionKey,
-  sanitizePrimarySessionSnapshot,
-} from '../../../utils/primary-session-cache';
+  isSessionKeyInAgentScope,
+  sanitizeSnapshotForAgent,
+} from '../../../utils/agent-session-scope';
 
 let msgCounter = 0;
 function makeId(prefix: string): string {
@@ -282,15 +283,16 @@ export function useChatHistoryState({
 
     const restoreStartupPreview = async () => {
       const [rawSnapshot, cachedSessions] = await Promise.all([
-        StorageService.getLastOpenedSessionSnapshot(gatewayConfigId).catch(() => null),
+        StorageService.getLastOpenedSessionSnapshot(gatewayConfigId, currentAgentId).catch(() => null),
         ChatCacheService.listSessions().catch((): CachedSessionMeta[] => []),
       ]);
-      const snapshot = sanitizePrimarySessionSnapshot(rawSnapshot);
+      const snapshot = sanitizeSnapshotForAgent(rawSnapshot, currentAgentId);
       if (cancelled || sessionKeyRef.current) return;
 
-      const snapshotPreview = buildSnapshotPreviewSession(snapshot)
-        .filter((session) => isPrimaryCachedSessionKey(session.key));
-      const cachedPreview = buildCachedPreviewSessions(cachedSessions, gatewayConfigId, mainSessionKey);
+      const snapshotPreview = buildSnapshotPreviewSession(snapshot);
+      const previewCacheKey = snapshot?.sessionKey ?? mainSessionKey;
+      const cachedPreview = buildCachedPreviewSessions(cachedSessions, gatewayConfigId, previewCacheKey)
+        .filter((session) => isSessionKeyInAgentScope(session.key, currentAgentId));
       const previewSessions = [...snapshotPreview, ...cachedPreview]
         .filter((session, index, list) => list.findIndex((item) => item.key === session.key) === index);
       if (previewSessions.length > 0) {
@@ -464,6 +466,7 @@ export function useChatHistoryState({
             if (!alreadyCached) toCache.push({ text, ts: msgTs, images: rawImages, idempotencyKey });
           }
 
+          if (shouldHideMessage({ role: 'user', text: displayText })) continue;
           if (displayText.trim() === '' && !imageUris) continue;
 
           // Build imageMetas from URIs + cached dimensions
@@ -940,23 +943,22 @@ export function useChatHistoryState({
 
     // Fire both reads in parallel: cached snapshot + server session list
     const snapshotPromise = gatewayConfigId
-      ? StorageService.getLastOpenedSessionSnapshot(gatewayConfigId)
-        .then((snapshot) => sanitizePrimarySessionSnapshot(snapshot))
+      ? StorageService.getLastOpenedSessionSnapshot(gatewayConfigId, currentAgentId)
+        .then((snapshot) => sanitizeSnapshotForAgent(snapshot, currentAgentId))
         .catch(() => null)
       : Promise.resolve(null);
     const listPromise = gateway.listSessions();
 
     // Optimistic: prefer the currently visible main session; fall back to cached snapshot.
     const snapshot = await snapshotPromise;
-    const snapshotPreview = buildSnapshotPreviewSession(snapshot)
-      .filter((session) => isPrimaryCachedSessionKey(session.key));
+    const snapshotPreview = buildSnapshotPreviewSession(snapshot);
     if (snapshotPreview.length > 0) {
       setSessions((prev) => (prev.length > 0 ? prev : snapshotPreview));
     }
     const preferredKey = (
-      currentKey && isPrimaryCachedSessionKey(currentKey)
+      currentKey && isSessionKeyInAgentScope(currentKey, currentAgentId)
         ? currentKey
-          : snapshot?.sessionKey ?? null
+        : snapshot?.sessionKey ?? null
     );
     let optimisticHistoryPromise: Promise<number> | null = null;
     if (preferredKey) {

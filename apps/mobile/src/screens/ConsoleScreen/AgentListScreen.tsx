@@ -17,6 +17,7 @@ import {
   createListContentStyle,
 } from '../../components/ui';
 import { CreateAgentModal } from '../../components/agents/CreateAgentModal';
+import { scheduleAutomaticAppReview } from '../../services/auto-app-review';
 import { useTranslation } from 'react-i18next';
 import { useAppContext } from '../../contexts/AppContext';
 import { useProPaywall } from '../../contexts/ProPaywallContext';
@@ -202,7 +203,10 @@ export function AgentListScreen(): React.JSX.Element {
       <CreateAgentModal
         visible={createVisible}
         onClose={() => setCreateVisible(false)}
-        onCreated={() => loadAgents('background')}
+        onCreated={() => {
+          scheduleAutomaticAppReview('agent_created');
+          void loadAgents('background');
+        }}
       />
     </View>
   );

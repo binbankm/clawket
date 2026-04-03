@@ -121,6 +121,7 @@ export function ProPaywallOverlay({ visible, onClose }: Props): React.JSX.Elemen
     { emoji: '\uD83D\uDD17', text: t('Connect to multiple OpenClaws') },
     { emoji: '\uD83D\uDDD2\uFE0F', text: t('Back up, diagnose & fix OpenClaw') },
     { emoji: '\uD83D\uDD10', text: t('View and manage OpenClaw permissions') },
+    { emoji: '\uD83C\uDFA8', text: t('Exclusive app icons') },
     { emoji: '\u270F\uFE0F', text: t('Edit agent personality and memory') },
     { emoji: '\uD83D\uDCCA', text: t('Search chat history & view logs') },
   ];

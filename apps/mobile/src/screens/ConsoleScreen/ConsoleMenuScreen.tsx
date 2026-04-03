@@ -776,6 +776,14 @@ export function ConsoleMenuScreen(): React.JSX.Element {
 
         {/* List items */}
         <View style={styles.listSection}>
+          <TouchableOpacity style={[styles.listItem, { borderColor: colors.border }]} onPress={() => nav('AgentSessionsBoard', 'list_agent_sessions_board')} activeOpacity={0.7}>
+            <Text style={styles.listEmoji}>{'🪟'}</Text>
+            <View style={styles.listText}>
+              <Text style={[styles.listTitle, { color: colors.text }]}>{t('Agent & Session Board')}</Text>
+              <Text style={[styles.listDesc, { color: colors.textMuted }]}>{t('A calmer overview for recent agent and session activity')}</Text>
+            </View>
+            <ChevronRight size={16} color={colors.textSubtle} strokeWidth={2} />
+          </TouchableOpacity>
           <TouchableOpacity style={[styles.listItem, { borderColor: colors.border }]} onPress={() => nav('Channels', 'list_channels')} activeOpacity={0.7}>
             <Text style={styles.listEmoji}>{'🔗'}</Text>
             <View style={styles.listText}>

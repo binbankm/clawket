@@ -4,6 +4,7 @@ import * as Haptics from 'expo-haptics';
 import * as StoreReview from 'expo-store-review';
 import { MenuAction, MenuView } from '@react-native-menu/menu';
 import {
+  ActivityIndicator,
   ActionSheetIOS,
   Alert,
   Image,
@@ -42,6 +43,7 @@ import { isMacCatalyst } from '../../utils/platform';
 import { APP_PACKAGE_VERSION } from '../../constants/app-version';
 import { CLAWKET_GITHUB_REPO_URL } from '../../config/app-links';
 import { buildSupportEmailUrl, publicAppLinks } from '../../config/public';
+import { AppIconVariant, getCurrentAppIconAsync, isAppIconChangeSupportedAsync, setCurrentAppIconAsync } from '../../services/app-icon';
 import { saveBundledImageToPhotoLibrary } from '../../services/photo-library';
 import { useConfigScreenController } from './hooks/useConfigScreenController';
 import type { ConfigStackParamList } from './ConfigTab';
@@ -107,6 +109,12 @@ const MODE_PLACEHOLDERS: Record<GatewayMode, string> = {
 };
 const CLAWKET_IOS_APP_STORE_URL = 'https://apps.apple.com/app/id6759597015';
 const CLAWKET_ANDROID_PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=com.p697.clawket';
+const APP_ICON_OPTIONS: Array<{ value: AppIconVariant; labelKey: 'Light' | 'Dark'; source: number }> = [
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  { value: 'default', labelKey: 'Light', source: require('../../../assets/icon.png') },
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  { value: 'black', labelKey: 'Dark', source: require('../../../assets/app-icons/black/app-icon-black-1024.png') },
+];
 
 type RowIconProps = {
   backgroundColor: string;
@@ -131,6 +139,7 @@ export function ConfigScreenLayout({ insets, tabBarHeight, controller }: Props):
     isPro,
     isConfigured,
     paywallPackages,
+    showPaywall,
     showPaywallPreview,
     snapshot,
   } = useProPaywall();
@@ -158,6 +167,11 @@ export function ConfigScreenLayout({ insets, tabBarHeight, controller }: Props):
   const showWecomSupportEntry = shouldShowWecomSupportEntry();
   const supportEmailUrl = buildSupportEmailUrl(publicAppLinks.supportEmail);
   const [wecomModalVisible, setWecomModalVisible] = useState(false);
+  const [appIconModalVisible, setAppIconModalVisible] = useState(false);
+  const [appIconSupported, setAppIconSupported] = useState(false);
+  const [appIconLoading, setAppIconLoading] = useState(true);
+  const [appIconPending, setAppIconPending] = useState(false);
+  const [currentAppIcon, setCurrentAppIcon] = useState<AppIconVariant>('default');
   const themeMenuActions = useMemo<MenuAction[]>(() => THEME_OPTIONS.map((option) => ({
     id: option.value,
     title: option.label,
@@ -207,6 +221,38 @@ export function ConfigScreenLayout({ insets, tabBarHeight, controller }: Props):
     }, 1000);
     return () => clearInterval(interval);
   }, [controller.debugMode]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadAppIconState = async () => {
+      try {
+        const supported = await isAppIconChangeSupportedAsync();
+        if (cancelled) return;
+        setAppIconSupported(supported);
+        if (!supported) {
+          return;
+        }
+
+        const currentIcon = await getCurrentAppIconAsync();
+        if (cancelled) return;
+        setCurrentAppIcon(currentIcon);
+      } catch {
+        if (cancelled) return;
+        setAppIconSupported(false);
+      } finally {
+        if (!cancelled) {
+          setAppIconLoading(false);
+        }
+      }
+    };
+
+    void loadAppIconState();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleSwipeOpen = useCallback((id: string) => {
     if (openRowRef.current && openRowRef.current !== rowRefs.current.get(id)) {
@@ -329,6 +375,43 @@ export function ConfigScreenLayout({ insets, tabBarHeight, controller }: Props):
   const handleReleaseNotesEntryPress = useCallback(() => {
     configNavigation.navigate('ReleaseNotesHistory');
   }, [configNavigation]);
+
+  const handleAppIconEntryPress = useCallback(() => {
+    if (!appIconSupported) {
+      return;
+    }
+    if (!isPro) {
+      showPaywall('appIcons');
+      return;
+    }
+    setAppIconModalVisible(true);
+  }, [appIconSupported, isPro, showPaywall]);
+
+  const handleAppIconSelect = useCallback(async (nextIcon: AppIconVariant) => {
+    if (appIconPending) {
+      return;
+    }
+    if (nextIcon === currentAppIcon) {
+      setAppIconModalVisible(false);
+      return;
+    }
+
+    setAppIconPending(true);
+    try {
+      await setCurrentAppIconAsync(nextIcon);
+      setCurrentAppIcon(nextIcon);
+      analyticsEvents.appIconChanged({
+        selected_icon_id: nextIcon,
+        source: 'config_screen',
+      });
+      void Haptics.selectionAsync();
+      setAppIconModalVisible(false);
+    } catch {
+      Alert.alert(t('Unable to change app icon'), t('Please try again later.', { ns: 'common' }));
+    } finally {
+      setAppIconPending(false);
+    }
+  }, [appIconPending, currentAppIcon, t]);
 
   const handleOpenExternalUrl = useCallback(async (url: string) => {
     await openExternalUrl(url, () => {
@@ -510,7 +593,35 @@ export function ConfigScreenLayout({ insets, tabBarHeight, controller }: Props):
             <ChevronRight size={16} color={theme.colors.textSubtle} strokeWidth={2} />
           </Pressable>
 
-          <View style={styles.divider} />
+          {appIconSupported ? <View style={styles.divider} /> : null}
+
+          {appIconSupported ? (
+            <>
+              <Pressable
+                onPress={() => {
+                  handleAppIconEntryPress();
+                }}
+                style={({ pressed }) => [styles.row, styles.feedbackRow, pressed && styles.rowPressed]}
+              >
+                <RowIcon backgroundColor="#EEF3FF" styles={styles}>
+                  <Palette size={17} strokeWidth={2.2} color="#5765F2" fill="#5765F2" />
+                </RowIcon>
+                <View style={styles.supportRowText}>
+                  <Text style={styles.rowLabel}>{t('App Icon')}</Text>
+                </View>
+                <View style={styles.rowTrailing}>
+                  {appIconLoading ? (
+                    <ActivityIndicator size="small" color={theme.colors.primary} />
+                  ) : (
+                    <Text style={styles.rowValue}>{t(currentAppIcon === 'black' ? 'Dark' : 'Light')}</Text>
+                  )}
+                  <ChevronRight size={16} color={theme.colors.textSubtle} strokeWidth={2} />
+                </View>
+              </Pressable>
+
+              <View style={styles.divider} />
+            </>
+          ) : null}
 
           <View style={styles.row}>
             <Text style={styles.rowLabel}>{t('Accent Color')}</Text>
@@ -983,6 +1094,45 @@ export function ConfigScreenLayout({ insets, tabBarHeight, controller }: Props):
         </View>
       </ModalSheet>
 
+      <ModalSheet
+        visible={appIconModalVisible}
+        onClose={() => {
+          if (appIconPending) return;
+          setAppIconModalVisible(false);
+        }}
+        title={t('App Icon')}
+      >
+        <View style={styles.appIconModalBody}>
+          {APP_ICON_OPTIONS.map((option) => {
+            const active = currentAppIcon === option.value;
+            return (
+              <Pressable
+                key={option.value}
+                onPress={() => {
+                  void handleAppIconSelect(option.value);
+                }}
+                disabled={appIconPending}
+                style={({ pressed }) => [
+                  styles.appIconCard,
+                  active && styles.appIconCardActive,
+                  pressed && !appIconPending && styles.appIconCardPressed,
+                ]}
+              >
+                <Image source={option.source} style={styles.appIconPreview} resizeMode="cover" />
+                <View style={styles.appIconTextWrap}>
+                  <Text style={styles.appIconTitle}>{t(option.labelKey)}</Text>
+                </View>
+                {appIconPending && active ? (
+                  <ActivityIndicator size="small" color={theme.colors.primary} />
+                ) : (
+                  <View style={[styles.appIconSelectionDot, active && styles.appIconSelectionDotActive]} />
+                )}
+              </Pressable>
+            );
+          })}
+        </View>
+      </ModalSheet>
+
       <EditorModal controller={controller} theme={theme} styles={styles} />
     </>
   );
@@ -1369,6 +1519,58 @@ function createStyles(colors: Colors) {
       color: colors.primaryText,
       fontSize: FontSize.base,
       fontWeight: FontWeight.semibold,
+    },
+    appIconModalBody: {
+      gap: Space.md,
+      paddingHorizontal: Space.lg,
+      paddingTop: Space.sm,
+      paddingBottom: Space.lg,
+    },
+    appIconCard: {
+      alignItems: 'center',
+      backgroundColor: colors.surfaceElevated,
+      borderColor: colors.border,
+      borderRadius: Radius.md,
+      borderWidth: 1,
+      flexDirection: 'row',
+      gap: Space.md,
+      paddingHorizontal: Space.md,
+      paddingVertical: Space.md,
+    },
+    appIconCardActive: {
+      borderColor: colors.primary,
+      shadowColor: colors.primary,
+      shadowOpacity: 0.12,
+      shadowRadius: 14,
+      shadowOffset: { width: 0, height: 6 },
+    },
+    appIconCardPressed: {
+      opacity: 0.88,
+    },
+    appIconPreview: {
+      borderRadius: Radius.lg,
+      height: 56,
+      width: 56,
+    },
+    appIconTextWrap: {
+      flex: 1,
+    },
+    appIconTitle: {
+      color: colors.text,
+      fontSize: FontSize.base,
+      fontWeight: FontWeight.semibold,
+    },
+    appIconSelectionDot: {
+      backgroundColor: colors.surfaceMuted,
+      borderColor: colors.borderStrong,
+      borderRadius: Radius.full,
+      borderWidth: 1,
+      height: 14,
+      width: 14,
+    },
+    appIconSelectionDotActive: {
+      backgroundColor: colors.primary,
+      borderColor: colors.primary,
     },
     rowLabel: {
       color: colors.text,

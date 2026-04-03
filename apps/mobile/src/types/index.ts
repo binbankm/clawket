@@ -129,6 +129,7 @@ export interface HelloOkPayload {
 export interface SessionInfo {
   key: string;
   sessionId?: string;
+  spawnedBy?: string;
   kind?: 'direct' | 'group' | 'global' | 'unknown';
   label?: string;
   title?: string;

@@ -141,6 +141,13 @@ export const analyticsEvents = {
     })?.catch(() => {});
   },
 
+  appIconChanged(properties: {
+    selected_icon_id: 'default' | 'black';
+    source: string;
+  }): void {
+    captureAnalyticsEvent('app_icon_changed', properties);
+  },
+
   clawHubCreateTapped(properties: {
     source: string;
   }): void {

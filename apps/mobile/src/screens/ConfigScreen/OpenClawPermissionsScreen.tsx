@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View, Pressable } from 'react-native';
+import { Alert, ScrollView, StyleSheet, Text, View, Pressable } from 'react-native';
 import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { CheckCircle2, CircleAlert, ShieldAlert, TriangleAlert } from 'lucide-react-native';
@@ -13,6 +13,7 @@ import type { RelayPermissionsResult, RelayPermissionsStatus } from '../../servi
 import { useAppTheme } from '../../theme';
 import { FontSize, FontWeight, Radius, Space } from '../../theme/tokens';
 import { buildCurrentAgentCommandAccessPatch } from '../../utils/openclaw-agent-permissions';
+import { buildGatewayExecPatch } from '../../utils/gateway-tool-settings';
 import type { ConfigStackParamList } from './ConfigTab';
 import { useGatewayToolSettings } from './hooks/useGatewayToolSettings';
 
@@ -84,6 +85,36 @@ function trimReasonPrefix(reason: string): string {
   return reason.replace(/^\[[^\]]+\]\s*/, '').trim();
 }
 
+function confirmAction(options: {
+  title: string;
+  message: string;
+  confirmText: string;
+  cancelText: string;
+}): Promise<boolean> {
+  return new Promise((resolve) => {
+    Alert.alert(
+      options.title,
+      options.message,
+      [
+        {
+          text: options.cancelText,
+          style: 'cancel',
+          onPress: () => resolve(false),
+        },
+        {
+          text: options.confirmText,
+          style: 'default',
+          onPress: () => resolve(true),
+        },
+      ],
+      {
+        cancelable: true,
+        onDismiss: () => resolve(false),
+      },
+    );
+  });
+}
+
 export function OpenClawPermissionsScreen(): React.JSX.Element {
   const navigation = useNavigation<Navigation>();
   useRoute<PermissionsRoute>();
@@ -105,6 +136,7 @@ export function OpenClawPermissionsScreen(): React.JSX.Element {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<RelayPermissionsResult | null>(null);
   const [savingCurrentAgentAccess, setSavingCurrentAgentAccess] = useState(false);
+  const [repairingAgentPermissions, setRepairingAgentPermissions] = useState(false);
 
   const loadPermissions = useCallback(async () => {
     if (!hasActiveGateway || !isRelayRoute) {
@@ -352,6 +384,9 @@ export function OpenClawPermissionsScreen(): React.JSX.Element {
     return items;
   }, [result, t, localizeExecHost, localizeExecSecurity, localizeExecAsk, localizeToolProfile]);
   const currentAgentCommandAccess = result?.exec.execToolAvailable ? 'available' : 'blocked';
+  const agentPermissionQuickFixApplied = currentAgentCommandAccess === 'available'
+    && toolSettings.execSecurity === 'full'
+    && toolSettings.execAsk === 'on-miss';
   const currentAgentAccessImpact = useMemo(() => {
     if (currentAgentCommandAccess === 'blocked') {
       return t('Blocked means this agent cannot run commands or manage background processes.');
@@ -421,6 +456,84 @@ export function OpenClawPermissionsScreen(): React.JSX.Element {
       setSavingCurrentAgentAccess(false);
     }
   }, [gateway, hasActiveGateway, loadPermissions, patchWithRestart, result, savingCurrentAgentAccess, t, toolSettings]);
+  const repairAgentPermissions = useCallback(async () => {
+    if (!result || !hasActiveGateway || repairingAgentPermissions || agentPermissionQuickFixApplied) {
+      return;
+    }
+    const confirmed = await confirmAction({
+      title: t('Repair agent permissions?'),
+      message: t('This will fully enable command access for the current agent, set command permission level to Full, and set command confirmation mode to Unknown Only. OpenClaw Gateway will restart. Continue?'),
+      confirmText: t('Repair Now'),
+      cancelText: t('Cancel'),
+    });
+    if (!confirmed) {
+      return;
+    }
+
+    const snapshot = await gateway.getConfig();
+    if (!snapshot.hash) {
+      setError(t('Gateway config hash is missing. Please refresh and try again.'));
+      return;
+    }
+
+    const accessNeedsFix = currentAgentCommandAccess === 'blocked';
+    const accessPatch = accessNeedsFix
+      ? buildCurrentAgentCommandAccessPatch({
+        config: snapshot.config,
+        agentId: result.exec.currentAgentId,
+        blocked: false,
+      })
+      : null;
+
+    if (accessNeedsFix && !accessPatch) {
+      setError(t('Current agent command access could not be updated. Please refresh and try again.'));
+      return;
+    }
+
+    const patch: Record<string, unknown> = {
+      ...buildGatewayExecPatch({
+        execSecurity: 'full',
+        execAsk: 'on-miss',
+      }),
+      ...(accessPatch ? { agents: accessPatch.patch.agents } : {}),
+    };
+
+    setRepairingAgentPermissions(true);
+    try {
+      await patchWithRestart({
+        patch,
+        configHash: snapshot.hash,
+        savingMessage: t('Repairing agent permissions...'),
+        restartingMessage: t('Restarting Gateway...'),
+        onSuccess: async () => {
+          await Promise.all([
+            loadPermissions(),
+            toolSettings.loadToolSettings(),
+          ]);
+          setError(null);
+        },
+        onError: async () => {
+          await Promise.all([
+            loadPermissions(),
+            toolSettings.loadToolSettings(),
+          ]);
+        },
+      });
+    } finally {
+      setRepairingAgentPermissions(false);
+    }
+  }, [
+    agentPermissionQuickFixApplied,
+    currentAgentCommandAccess,
+    gateway,
+    hasActiveGateway,
+    loadPermissions,
+    patchWithRestart,
+    repairingAgentPermissions,
+    result,
+    t,
+    toolSettings,
+  ]);
 
   if (!hasActiveGateway) {
     return (
@@ -455,6 +568,21 @@ export function OpenClawPermissionsScreen(): React.JSX.Element {
 
       {result ? (
         <>
+          <Pressable
+            onPress={() => { void repairAgentPermissions(); }}
+            disabled={repairingAgentPermissions || savingCurrentAgentAccess || loading || agentPermissionQuickFixApplied}
+            style={({ pressed }) => [
+              styles.repairCard,
+              (pressed && !repairingAgentPermissions && !agentPermissionQuickFixApplied) ? styles.repairCardPressed : null,
+              (repairingAgentPermissions || savingCurrentAgentAccess || loading || agentPermissionQuickFixApplied) ? styles.repairCardDisabled : null,
+            ]}
+          >
+            <Text style={styles.repairTitle}>{t('One-click repair agent permissions')}</Text>
+            <Text style={styles.repairSubtitle}>
+              {t('Give agent full authorization so permissions stop getting in the way.')}
+            </Text>
+          </Pressable>
+
           <View style={styles.statusGrid}>
             <StatusCard title={t('Web Search & Fetch')} summary={webSummary} status={result.web.status} styles={styles} />
             <StatusCard title={t('Command Execution')} summary={execSummary} status={result.exec.status} styles={styles} />
@@ -647,6 +775,29 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['theme']['colors'])
       backgroundColor: colors.surface,
       padding: Space.lg,
       gap: Space.md,
+    },
+    repairCard: {
+      borderRadius: Radius.md,
+      backgroundColor: colors.primary,
+      padding: Space.lg,
+      gap: Space.xs,
+    },
+    repairCardPressed: {
+      opacity: 0.9,
+    },
+    repairCardDisabled: {
+      opacity: 0.55,
+    },
+    repairTitle: {
+      color: colors.primaryText,
+      fontSize: FontSize.base,
+      fontWeight: FontWeight.semibold,
+    },
+    repairSubtitle: {
+      color: colors.primaryText,
+      fontSize: FontSize.sm,
+      lineHeight: 20,
+      opacity: 0.92,
     },
     cardTitle: {
       color: colors.text,

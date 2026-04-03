@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next';
 import { useIsFocused } from '@react-navigation/native';
 import { EdgeInsets } from 'react-native-safe-area-context';
 import { ChatHeader } from '../../components/chat/ChatHeader';
+import { ChildSessionActivityStrip } from '../../components/chat/ChildSessionActivityStrip';
 import { CompactionBanner } from '../../components/chat/CompactionBanner';
 import { ChatBackgroundLayer } from '../../components/chat/ChatBackgroundLayer';
 import { DebugOverlay } from '../../components/chat/DebugOverlay';
@@ -14,6 +15,7 @@ import { PairingPendingCard } from '../../components/chat/PairingPendingCard';
 import { AgentRowData } from '../../components/chat/AgentsModal';
 import { useAppContext } from '../../contexts/AppContext';
 import { pickAvatarImage, saveAgentAvatar, removeAgentAvatar, buildAvatarKey, readAgentAvatar } from '../../services/agent-avatar';
+import { scheduleAutomaticAppReview } from '../../services/auto-app-review';
 import { useShareIntent } from '../../hooks/useShareIntent';
 import { useChatGatewaySwitcher } from '../../hooks/useChatGatewaySwitcher';
 import { useProPaywall } from '../../contexts/ProPaywallContext';
@@ -41,6 +43,9 @@ import { useChatMessageSelection } from './hooks/useChatMessageSelection';
 import { useMessageFavorites } from './hooks/useMessageFavorites';
 import { useRotatingPlaceholder } from './hooks/useRotatingPlaceholder';
 import { QuickConnectGuideCard } from '../../components/config/QuickConnectGuideCard';
+import { buildChildSessionActivityCards } from './hooks/childSessionActivity';
+
+const COMPLETED_CHILD_STRIP_GRACE_MS = 8_000;
 
 type Props = {
   controller: ReturnType<typeof useChatController>;
@@ -49,6 +54,7 @@ type Props = {
   onAddGatewayConnection: () => void;
   onOpenCustomConnection: () => void;
   onManageAgents: () => void;
+  onOpenAgentSessionsBoard: () => void;
   openAgentsModalRequestAt?: number | null;
 };
 
@@ -144,7 +150,7 @@ function InitializationView({ theme, styles, onAdd, onUpload, onAddCustom, t }: 
   );
 }
 
-export function ChatScreenLayout({ controller, insets, onOpenSidebar, onAddGatewayConnection, onOpenCustomConnection, onManageAgents, openAgentsModalRequestAt }: Props): React.JSX.Element {
+export function ChatScreenLayout({ controller, insets, onOpenSidebar, onAddGatewayConnection, onOpenCustomConnection, onManageAgents, onOpenAgentSessionsBoard, openAgentsModalRequestAt }: Props): React.JSX.Element {
   const { t } = useTranslation(['chat', 'config']);
   const { isPro, showPaywall } = useProPaywall();
   const isFocused = useIsFocused();
@@ -181,8 +187,6 @@ export function ChatScreenLayout({ controller, insets, onOpenSidebar, onAddGatew
     setAgentAvatars(updated);
     setAvatarModalVisible(false);
   }, [currentAvatarKey, setAgentAvatars]);
-
-  const openAgentActivity = useCallback(() => setAgentActivityVisible(true), []);
 
   // Open agents modal when requested from the session sidebar
   const handledAgentsModalRef = useRef<number | null>(null);
@@ -227,6 +231,66 @@ export function ChatScreenLayout({ controller, insets, onOpenSidebar, onAddGatew
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps -- agentActiveCount forces re-read of agentActivityRef
   }, [agents, currentAgentId, controller.agentActivityRef, controller.agentActiveCount, controller.isSending, controller.activityLabel, agentAvatars, gateway]);
+
+  const childSessionCards = useMemo(
+    () => buildChildSessionActivityCards({
+      currentSessionKey: controller.sessionKey,
+      currentAgentId,
+      currentAgentName,
+      sessions: controller.sessions,
+      activityMap: controller.childSessionActivityRef.current,
+      resolveSessionTitle: (session, options) => sessionLabel(session, { currentAgentName: options?.currentAgentName ?? null }),
+    }),
+    [
+      controller.childSessionActivityRef,
+      controller.childSessionActivityVersion,
+      controller.sessionKey,
+      controller.sessions,
+      currentAgentId,
+      currentAgentName,
+    ],
+  );
+
+  const handleOpenChildSession = useCallback((sessionKey: string) => {
+    const found = controller.sessions.find((session) => session.key === sessionKey);
+    controller.switchSession(found ?? {
+      key: sessionKey,
+      kind: 'unknown',
+      label: sessionKey,
+    });
+  }, [controller]);
+
+  const childStripClearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (childStripClearTimerRef.current) {
+      clearTimeout(childStripClearTimerRef.current);
+      childStripClearTimerRef.current = null;
+    }
+
+    if (childSessionCards.length === 0) return;
+    if (childSessionCards.some((card) => card.status !== 'completed')) return;
+
+    const latestCompletedAt = childSessionCards.reduce(
+      (max, card) => Math.max(max, card.updatedAt),
+      0,
+    );
+    const remainingMs = Math.max(
+      0,
+      latestCompletedAt + COMPLETED_CHILD_STRIP_GRACE_MS - Date.now(),
+    );
+    const sessionKeys = childSessionCards.map((card) => card.sessionKey);
+    childStripClearTimerRef.current = setTimeout(() => {
+      childStripClearTimerRef.current = null;
+      controller.clearChildSessionActivities(sessionKeys);
+    }, remainingMs);
+
+    return () => {
+      if (childStripClearTimerRef.current) {
+        clearTimeout(childStripClearTimerRef.current);
+        childStripClearTimerRef.current = null;
+      }
+    };
+  }, [childSessionCards, controller]);
 
   const handleSelectAgent = useCallback((agentId: string) => {
     switchAgent(agentId);
@@ -286,6 +350,7 @@ export function ChatScreenLayout({ controller, insets, onOpenSidebar, onAddGatew
   const handleAgentCreated = useCallback((agentId: string) => {
     setCreateAgentVisible(false);
     switchAgent(agentId);
+    scheduleAutomaticAppReview('agent_created');
   }, [switchAgent]);
 
   const { theme } = useAppTheme();
@@ -456,10 +521,15 @@ export function ChatScreenLayout({ controller, insets, onOpenSidebar, onAddGatew
         contextLabel={headerContextLabel}
         wallpaperActive={chatAppearance.background.enabled && !!chatAppearance.background.imagePath}
         hasOtherAgentActivity={isMultiAgent && controller.agentActiveCount > 0}
-        onAgentActivity={openAgentActivity}
+        onAgentActivity={onOpenAgentSessionsBoard}
         refreshDisabled={!config || !controller.sessionKey || controller.refreshing}
         refreshing={headerBusy}
         topPadding={insets.top + (Platform.OS === 'android' ? 12 : 0)}
+      />
+
+      <ChildSessionActivityStrip
+        cards={childSessionCards}
+        onSelectSession={handleOpenChildSession}
       />
 
       {!!controller.compactionNotice && <CompactionBanner message={controller.compactionNotice} />}
@@ -608,6 +678,7 @@ export function ChatScreenLayout({ controller, insets, onOpenSidebar, onAddGatew
         onRetryModelPickerLoad={controller.retryModelPickerLoad}
         onAddGateway={handleAddGatewayFromSwitcher}
         onManageAgents={onManageAgents}
+        onOpenAgentSessionsBoard={onOpenAgentSessionsBoard}
         onSelectAgent={handleSelectAgent}
         onSelectGateway={gatewaySwitcher.activateConfig}
         onSelectCommandOption={controller.onSelectCommandOption}

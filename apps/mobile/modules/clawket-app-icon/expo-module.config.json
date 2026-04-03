@@ -1,0 +1,9 @@
+{
+  "platforms": ["apple", "android"],
+  "apple": {
+    "modules": ["ClawketAppIconModule"]
+  },
+  "android": {
+    "modules": ["com.clawket.appicon.ClawketAppIconModule"]
+  }
+}

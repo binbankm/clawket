@@ -48,16 +48,34 @@ export function buildGatewayToolPatch(input: GatewayToolSettings): Record<string
         search: { enabled: input.webSearchEnabled },
         fetch: { enabled: input.webFetchEnabled },
       },
-      exec: {
-        security: input.execSecurity,
-        ask: input.execAsk,
-      },
+      exec: buildGatewayExecPatch(input).tools.exec,
       media: {
         image: { enabled: input.mediaImageEnabled },
         audio: { enabled: input.mediaAudioEnabled },
         video: { enabled: input.mediaVideoEnabled },
       },
       links: { enabled: input.linksEnabled },
+    },
+  };
+}
+
+export function buildGatewayExecPatch(input: {
+  execSecurity: ExecSecurity;
+  execAsk: ExecAsk;
+}): {
+  tools: {
+    exec: {
+      security: ExecSecurity;
+      ask: ExecAsk;
+    };
+  };
+} {
+  return {
+    tools: {
+      exec: {
+        security: input.execSecurity,
+        ask: input.execAsk,
+      },
     },
   };
 }

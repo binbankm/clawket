@@ -243,9 +243,9 @@ export function ChatTab(): React.JSX.Element {
     channel?: string;
   } | null>(null);
   const [openSidebarRequestAt, setOpenSidebarRequestAt] = React.useState<number | null>(null);
-  const [openAgentsModalRequestAt, setOpenAgentsModalRequestAt] = React.useState<number | null>(null);
+  const [openAgentSessionsBoardRequestAt, setOpenAgentSessionsBoardRequestAt] = React.useState<number | null>(null);
   const handleAgentSwitchFromSidebar = React.useCallback(() => {
-    setOpenAgentsModalRequestAt(Date.now());
+    setOpenAgentSessionsBoardRequestAt(Date.now());
   }, []);
 
   React.useEffect(() => {
@@ -292,8 +292,8 @@ export function ChatTab(): React.JSX.Element {
 
   // Stable screen render to avoid remounting ChatScreen on parent re-renders
   const renderChatScreen = React.useCallback(
-    () => <ChatScreen openSidebarRequestAt={openSidebarRequestAt} openAgentsModalRequestAt={openAgentsModalRequestAt} />,
-    [openSidebarRequestAt, openAgentsModalRequestAt],
+    () => <ChatScreen openSidebarRequestAt={openSidebarRequestAt} openAgentSessionsBoardRequestAt={openAgentSessionsBoardRequestAt} />,
+    [openSidebarRequestAt, openAgentSessionsBoardRequestAt],
   );
 
   const screenOptions = React.useMemo(() => ({

@@ -85,6 +85,7 @@ function createHookHarness() {
   const sessionRunStateRef = { current: new Map() } as { current: Map<string, any> };
   const pendingOptimisticRunIdsRef = { current: new Map() } as { current: Map<string, string> };
   const agentActivityRef = { current: new Map() } as { current: Map<string, any> };
+  const childSessionActivityRef = { current: new Map() } as { current: Map<string, any> };
 
   const setMessages = jest.fn((value: UiMessage[] | ((prev: UiMessage[]) => UiMessage[])) => {
     messages = typeof value === 'function' ? value(messages) : value;
@@ -134,6 +135,8 @@ function createHookHarness() {
     execApprovalEnabled: false,
     setActivityLabel,
     agentActivityRef,
+    childSessionActivityRef,
+    onChildSessionActivityChange: jest.fn(),
     onAgentActiveCountChange: jest.fn(),
     resetAgentActiveCount: jest.fn(),
     onRunSignal: jest.fn(),
@@ -231,6 +234,88 @@ describe('useGatewayChatEvents', () => {
     expect(harness.getChatStream()).toBeNull();
     expect(harness.params.currentRunIdRef.current).toBeNull();
     expect(harness.params.setChatStream).not.toHaveBeenCalled();
+  });
+
+  it('tracks child subagent session activity across start, delta, tool, and final', () => {
+    const harness = createHookHarness();
+    renderHook(() => useGatewayChatEvents(harness.params));
+
+    act(() => {
+      harness.gateway.emit('chatRunStart', {
+        runId: 'run-child',
+        sessionKey: 'agent:main:subagent:coder',
+      });
+    });
+
+    expect(
+      harness.params.childSessionActivityRef.current.get('agent:main:subagent:coder'),
+    ).toMatchObject({ status: 'streaming' });
+
+    act(() => {
+      harness.gateway.emit('chatDelta', {
+        runId: 'run-child',
+        sessionKey: 'agent:main:subagent:coder',
+        text: 'Inspecting repo state',
+      });
+    });
+
+    expect(
+      harness.params.childSessionActivityRef.current.get('agent:main:subagent:coder'),
+    ).toMatchObject({
+      status: 'streaming',
+      previewText: 'Inspecting repo state',
+    });
+
+    act(() => {
+      harness.gateway.emit('chatTool', {
+        runId: 'run-child',
+        sessionKey: 'agent:main:subagent:coder',
+        toolCallId: 'tool-1',
+        name: 'read',
+        phase: 'start',
+      });
+    });
+
+    expect(
+      harness.params.childSessionActivityRef.current.get('agent:main:subagent:coder'),
+    ).toMatchObject({
+      status: 'tool_calling',
+      toolName: 'read',
+    });
+
+    act(() => {
+      harness.gateway.emit('chatFinal', {
+        runId: 'run-child',
+        sessionKey: 'agent:main:subagent:coder',
+        message: {
+          role: 'assistant',
+          content: [{ type: 'text', text: 'Done' }],
+        },
+      });
+    });
+
+    expect(
+      harness.params.childSessionActivityRef.current.get('agent:main:subagent:coder'),
+    ).toMatchObject({
+      status: 'completed',
+      toolName: 'read',
+    });
+    expect(harness.params.onChildSessionActivityChange).toHaveBeenCalled();
+  });
+
+  it('does not track non-subagent sessions in child session activity', () => {
+    const harness = createHookHarness();
+    renderHook(() => useGatewayChatEvents(harness.params));
+
+    act(() => {
+      harness.gateway.emit('chatRunStart', {
+        runId: 'run-dm',
+        sessionKey: 'agent:main:dm:alice',
+      });
+    });
+
+    expect(harness.params.childSessionActivityRef.current.size).toBe(0);
+    expect(harness.params.onChildSessionActivityChange).not.toHaveBeenCalled();
   });
 
   it('cleans up the active run without appending a bubble for exact NO_REPLY finals', () => {

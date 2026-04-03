@@ -196,6 +196,30 @@ describe("ChatCacheService", () => {
       ]);
     });
 
+    it("does not cache hidden user messages that match transcript suppression rules", async () => {
+      const messages: UiMessage[] = [
+        makeMsg({ id: "hidden", role: "user", text: "OpenClaw runtime context\n\ninternal" }),
+        makeMsg({ id: "visible", role: "assistant", text: "Visible reply" }),
+      ];
+
+      await ChatCacheService.saveMessages(
+        {
+          gatewayConfigId: "gw1",
+          agentId: "agent1",
+          sessionKey: "agent:agent1:main",
+        },
+        messages,
+      );
+
+      const result = await ChatCacheService.getMessages(
+        "gw1",
+        "agent1",
+        "agent:agent1:main",
+      );
+
+      expect(result.map((message) => message.id)).toEqual(["visible"]);
+    });
+
     it("isolates cache generations by sessionId under the same session key", async () => {
       await ChatCacheService.saveMessages(
         {

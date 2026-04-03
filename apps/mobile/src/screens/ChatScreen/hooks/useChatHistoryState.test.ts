@@ -602,6 +602,42 @@ describe('useChatHistoryState', () => {
     ]);
   });
 
+  it('filters user messages that start with the OpenClaw runtime context prefix from gateway history', async () => {
+    const gateway = {
+      listSessions: jest.fn().mockResolvedValue([]),
+      fetchHistory: jest.fn().mockResolvedValue({
+        messages: [
+          { role: 'user', content: 'OpenClaw runtime context\n\ninternal' },
+          { role: 'assistant', content: 'visible reply' },
+        ],
+      }),
+      getConnectionState: jest.fn().mockReturnValue('ready'),
+    };
+
+    const { result } = renderHook(() => {
+      const sessionKeyRef = useRef<string | null>('agent:main:main');
+      const state = useChatHistoryState({
+        gateway: gateway as any,
+        dbg: jest.fn(),
+        t: translate,
+        sessionKeyRef,
+        mainSessionKey: 'agent:main:main',
+        gatewayConfigId: null,
+        currentAgentId: 'main',
+      });
+      return { state, sessionKeyRef };
+    });
+
+    await act(async () => {
+      result.current.state.setSessionKey('agent:main:main');
+      await result.current.state.loadHistory('agent:main:main', 50);
+    });
+
+    expect(result.current.state.messages.map((message) => `${message.role}:${message.text}`)).toEqual([
+      'assistant:visible reply',
+    ]);
+  });
+
   it('keeps repeated user messages when text is identical but history items are distinct', async () => {
     const gateway = {
       listSessions: jest.fn().mockResolvedValue([]),
@@ -693,25 +729,25 @@ describe('useChatHistoryState', () => {
     expect(result.current.state.historyLoaded).toBe(false);
   });
 
-  it('restores startup preview session metadata only from the primary main-session snapshot', async () => {
+  it('restores startup preview session metadata from the current agent scoped snapshot', async () => {
     const gateway = {
       listSessions: jest.fn().mockResolvedValue([]),
       fetchHistory: jest.fn().mockResolvedValue({ messages: [] }),
       getConnectionState: jest.fn().mockReturnValue('connecting'),
     };
     (StorageService.getLastOpenedSessionSnapshot as jest.Mock).mockResolvedValue({
-      sessionKey: 'agent:main:main',
-      sessionId: 'sess-main',
-      sessionLabel: 'Main Session',
+      sessionKey: 'agent:writer:dm:alice',
+      sessionId: 'sess-alice',
+      sessionLabel: 'Alice',
       updatedAt: 1_700_000_000_000,
-      agentId: 'main',
-      agentName: 'Main Agent',
+      agentId: 'writer',
+      agentName: 'Writer Agent',
       agentEmoji: '🤖',
       agentAvatarUri: 'https://example.com/avatar.png',
     });
     (ChatCacheService.getTimelinePage as jest.Mock).mockResolvedValueOnce({
       messages: [
-        { id: 'cached-1', role: 'assistant', text: 'cached main hello', timestampMs: 1_700_000_000_100 },
+        { id: 'cached-1', role: 'assistant', text: 'cached writer hello', timestampMs: 1_700_000_000_100 },
       ],
       hasMore: false,
     });
@@ -723,9 +759,9 @@ describe('useChatHistoryState', () => {
         dbg: jest.fn(),
         t: translate,
         sessionKeyRef,
-        mainSessionKey: 'agent:main:main',
+        mainSessionKey: 'agent:writer:main',
         gatewayConfigId: 'gw-1',
-        currentAgentId: 'main',
+        currentAgentId: 'writer',
       });
       return { state, sessionKeyRef };
     });
@@ -735,21 +771,22 @@ describe('useChatHistoryState', () => {
       await Promise.resolve();
     });
 
-    expect(result.current.state.sessionKey).toBe('agent:main:main');
-    expect(result.current.sessionKeyRef.current).toBe('agent:main:main');
+    expect(StorageService.getLastOpenedSessionSnapshot).toHaveBeenCalledWith('gw-1', 'writer');
+    expect(result.current.state.sessionKey).toBe('agent:writer:dm:alice');
+    expect(result.current.sessionKeyRef.current).toBe('agent:writer:dm:alice');
     expect(result.current.state.sessions).toEqual([
       expect.objectContaining({
-        key: 'agent:main:main',
-        sessionId: 'sess-main',
-        label: 'Main Session',
-        title: 'Main Session',
-        displayName: 'Main Agent',
+        key: 'agent:writer:dm:alice',
+        sessionId: 'sess-alice',
+        label: 'Alice',
+        title: 'Alice',
+        displayName: 'Writer Agent',
       }),
     ]);
-    expect(result.current.state.messages.map((message) => message.text)).toEqual(['cached main hello']);
+    expect(result.current.state.messages.map((message) => message.text)).toEqual(['cached writer hello']);
   });
 
-  it('ignores legacy non-primary session cache and restores the primary main session instead', async () => {
+  it('ignores a snapshot from another agent and restores the current agent main preview instead', async () => {
     const gateway = {
       listSessions: jest.fn().mockResolvedValue([]),
       fetchHistory: jest.fn().mockResolvedValue({ messages: [] }),
@@ -809,6 +846,7 @@ describe('useChatHistoryState', () => {
       await Promise.resolve();
     });
 
+    expect(StorageService.getLastOpenedSessionSnapshot).toHaveBeenCalledWith('gw-1', 'main');
     expect(result.current.state.sessionKey).toBe('agent:main:main');
     expect(result.current.state.messages.map((message) => message.text)).toEqual(['cached main only']);
   });

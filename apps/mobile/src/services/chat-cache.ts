@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { UiMessage } from "../types/chat";
-import { sanitizeSilentPreviewText } from "../utils/chat-message";
+import { sanitizeSilentPreviewText, shouldHideMessage } from "../utils/chat-message";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -124,7 +124,10 @@ function isStoredCachedMessage(value: unknown): value is CachedMessage {
 }
 
 function sanitizeCachedMessages(messages: unknown[]): CachedMessage[] {
-  return messages.filter(isStoredCachedMessage).filter(isCacheableMessage);
+  return messages
+    .filter(isStoredCachedMessage)
+    .filter(isCacheableMessage)
+    .filter((message) => !shouldHideMessage(message));
 }
 
 function toSlim(msg: UiMessage): CachedMessage {
@@ -565,7 +568,10 @@ export const ChatCacheService = {
           stableSessionId,
         );
         // Only cache user + assistant + tool messages (skip system noise)
-        const cacheable = messages.filter(isCacheableMessage).map(toSlim);
+        const cacheable = messages
+          .filter(isCacheableMessage)
+          .filter((message) => !shouldHideMessage(message))
+          .map(toSlim);
 
         if (cacheable.length === 0) return;
 

@@ -231,7 +231,7 @@ export const ToolsView = React.forwardRef<ToolsViewHandle, Props>(function Tools
     if (!hasPendingChanges || saving) return;
 
     const lines: string[] = [];
-    lines.push(t('common:Saving this config will restart Gateway and may interrupt active tasks like chats, cron jobs, or sub-agents. Continue?'));
+    lines.push(t('common:This will restart Gateway. Continue?'));
     if (diffSummary.enabled > 0) {
       lines.push(t('Enable {{count}} tools', { count: diffSummary.enabled }));
     }

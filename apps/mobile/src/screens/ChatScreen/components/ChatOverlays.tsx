@@ -71,6 +71,7 @@ type Props = {
   onRetryModelPickerLoad: () => void;
   onAddGateway: () => void;
   onManageAgents: () => void;
+  onOpenAgentSessionsBoard: () => void;
   onSelectAgent: (agentId: string) => void;
   onSelectGateway: (configId: string) => void | Promise<void>;
   onSelectCommandOption: (option: string) => void;
@@ -150,6 +151,7 @@ export function ChatOverlays({
   onRetryModelPickerLoad,
   onAddGateway,
   onManageAgents,
+  onOpenAgentSessionsBoard,
   onSelectAgent,
   onSelectGateway,
   onSelectCommandOption,
@@ -452,6 +454,7 @@ export function ChatOverlays({
         gatewayLoading={gatewayLoading}
         onAddGateway={onAddGateway}
         onManageAgents={onManageAgents}
+        onOpenAgentSessionsBoard={onOpenAgentSessionsBoard}
         onSelectAgent={onSelectAgent}
         onSelectGateway={onSelectGateway}
         onNewAgent={handleNewAgent}

@@ -153,7 +153,7 @@ describe('useChatAgentIdentity', () => {
     });
   });
 
-  it('does not persist last-session snapshot or agent cache for non-primary sessions', async () => {
+  it('persists last-session snapshot and agent cache for a non-main session in the current agent scope', async () => {
     const mockedStorage = StorageService as jest.Mocked<typeof StorageService>;
     const gateway = createGateway('connecting');
 
@@ -187,6 +187,50 @@ describe('useChatAgentIdentity', () => {
       await Promise.resolve();
     });
 
+    expect(mockedStorage.setLastOpenedSessionSnapshot).toHaveBeenCalledWith(
+      'cfg:one',
+      expect.objectContaining({
+        sessionKey: 'agent:writer:dm:alice',
+        sessionId: 'sess-writer',
+        agentId: 'writer',
+        agentName: 'Writer Agent',
+      }),
+    );
+    expect(mockedStorage.setCachedAgentIdentity).toHaveBeenCalledWith(
+      'cfg:one',
+      expect.objectContaining({
+        agentId: 'writer',
+        agentName: 'Writer Agent',
+      }),
+    );
+  });
+
+  it('does not hydrate or persist identity when the visible session belongs to another agent', async () => {
+    const mockedStorage = StorageService as jest.Mocked<typeof StorageService>;
+    const gateway = createGateway('connecting');
+
+    renderHook(() => useChatAgentIdentity({
+      agents: [],
+      cacheAgentName: undefined,
+      currentAgentId: 'main',
+      currentSessionInfo: {
+        key: 'agent:writer:dm:alice',
+        kind: 'unknown',
+        sessionId: 'sess-writer',
+      },
+      gateway,
+      gatewayConfigId: 'cfg:one',
+      initialPreview: null,
+      sessionKey: 'agent:writer:dm:alice',
+    }));
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mockedStorage.getLastOpenedSessionSnapshot).not.toHaveBeenCalled();
+    expect(mockedStorage.getCachedAgentIdentity).not.toHaveBeenCalled();
     expect(mockedStorage.setLastOpenedSessionSnapshot).not.toHaveBeenCalled();
     expect(mockedStorage.setCachedAgentIdentity).not.toHaveBeenCalled();
   });
