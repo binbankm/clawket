@@ -158,6 +158,7 @@ export function ChatScreenLayout({ controller, insets, onOpenSidebar, onAddGatew
   const isFocused = useIsFocused();
   const { importGatewayQrImage } = useGatewayScanner();
   const { activeGatewayConfigId, currentAgentId, agentAvatars, setAgentAvatars, agents, gateway, gatewayEpoch, showModelUsage, chatFontSize, chatAppearance, config, requestAddGateway, isMultiAgent, switchAgent, debugMode, onSaved } = useAppContext();
+  const backendCapabilities = useMemo(() => gateway.getBackendCapabilities(), [gateway]);
   const [avatarModalVisible, setAvatarModalVisible] = useState(false);
   const [agentActivityVisible, setAgentActivityVisible] = useState(false);
   const currentAgent = agents.find((a) => a.id === currentAgentId);
@@ -651,7 +652,7 @@ export function ChatScreenLayout({ controller, insets, onOpenSidebar, onAddGatew
             onFocus={handleComposerFocus}
             onModelPress={() => controller.openModelPicker()}
             onPickImage={controller.pickImage}
-            onWebSearchPress={() => setWebSearchVisible(true)}
+            onWebSearchPress={backendCapabilities.consoleTools ? () => setWebSearchVisible(true) : undefined}
             onPromptPress={() => setPromptPickerVisible(true)}
             onOpenPreview={(index) => controller.preview.openPreview(controller.pendingImages.map((image) => image.uri), index)}
             onRemovePendingImage={(index) => {

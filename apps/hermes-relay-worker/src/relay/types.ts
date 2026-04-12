@@ -9,6 +9,7 @@ export interface Env {
   GATEWAY_OWNER_LEASE_MS?: string;
   AWAITING_CHALLENGE_TTL_MS?: string;
   CLIENT_IDLE_TIMEOUT_MS?: string;
+  GATEWAY_PING_TIMEOUT_MS?: string;
 }
 
 export type SocketAttachment = {
@@ -85,6 +86,7 @@ export const CONNECT_START_BUFFER_TTL_MS = 12_000;
 export const PENDING_CHALLENGE_TTL_MS = 5_000;
 export const AWAITING_CHALLENGE_TTL_DEFAULT_MS = 25_000;
 export const CLIENT_IDLE_TIMEOUT_DEFAULT_MS = 10 * 60_000;
+export const GATEWAY_PING_TIMEOUT_DEFAULT_MS = 45_000;
 
 export const SOCKET_CLOSE_CODES = {
   REPLACED_BY_NEW_BRIDGE: 4001,

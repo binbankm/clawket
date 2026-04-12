@@ -1324,6 +1324,7 @@ describe('HermesLocalBridge history metadata', () => {
 
   it('loads Hermes native history from state.db and preserves tool calls', async () => {
     const hermesStateDbPath = await createHermesStateDbPath();
+    const hermesHomePath = await createHermesHomePath();
     execFileSync('python3', [
       '-c',
       [
@@ -1353,6 +1354,7 @@ describe('HermesLocalBridge history metadata', () => {
 
     const bridge = new HermesLocalBridge({
       hermesStateDbPath,
+      hermesHomePath,
       sessionStorePath: await createSessionStorePath(),
       startHermesIfNeeded: false,
     });
@@ -1389,6 +1391,7 @@ describe('HermesLocalBridge history metadata', () => {
 
   it('deduplicates bridge-appended final assistant replies when native Hermes history already has them', async () => {
     const hermesStateDbPath = await createHermesStateDbPath();
+    const hermesHomePath = await createHermesHomePath();
     execFileSync('python3', [
       '-c',
       [
@@ -1417,6 +1420,7 @@ describe('HermesLocalBridge history metadata', () => {
 
     const bridge = new HermesLocalBridge({
       hermesStateDbPath,
+      hermesHomePath,
       sessionStorePath: await createSessionStorePath(),
       startHermesIfNeeded: false,
     });

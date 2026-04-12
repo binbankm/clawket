@@ -17,7 +17,10 @@ import { Check, RefreshCcw, ShieldCheck, X } from 'lucide-react-native';
 import { publicAppLinks } from '../../config/public';
 import { useProPaywall } from '../../contexts/ProPaywallContext';
 import { analyticsEvents } from '../../services/analytics/events';
-import { selectDisplayedRevenueCatPackage } from '../../services/pro-subscription';
+import {
+  isRevenueCatPackagePurchaseLocked,
+  selectDisplayedRevenueCatPackage,
+} from '../../services/pro-subscription';
 import { useAppTheme } from '../../theme';
 import { FontSize, FontWeight, Radius, Shadow, Space } from '../../theme/tokens';
 
@@ -128,9 +131,10 @@ export function ProPaywallOverlay({ visible, onClose }: Props): React.JSX.Elemen
   ];
 
   const activePackage = selectDisplayedRevenueCatPackage(paywallPackages, snapshot);
-  const interactionLocked = previewOnly && isPro;
-  const purchaseDisabled = interactionLocked || purchasePending || restorePending || offeringsLoading || isLoading || !isConfigured || !selectedPackage;
-  const restoreDisabled = interactionLocked || restorePending || purchasePending;
+  const selectedPackageLocked = isRevenueCatPackagePurchaseLocked(selectedPackage, paywallPackages, snapshot);
+  const interactionLocked = previewOnly && isPro && selectedPackageLocked;
+  const purchaseDisabled = selectedPackageLocked || purchasePending || restorePending || offeringsLoading || isLoading || !isConfigured || !selectedPackage;
+  const restoreDisabled = previewOnly && isPro ? true : restorePending || purchasePending;
   const feedback = statusCode
     ? {
       tone: 'success' as const,
@@ -188,23 +192,24 @@ export function ProPaywallOverlay({ visible, onClose }: Props): React.JSX.Elemen
             {paywallPackages.map((item) => {
               const selected = item.packageIdentifier === selectedPackageId;
               const isCurrentPlan = item.packageIdentifier === activePackage?.packageIdentifier;
+              const packageLocked = isRevenueCatPackagePurchaseLocked(item, paywallPackages, snapshot);
               return (
                 <Pressable
                   key={item.packageIdentifier}
                   onPress={() => {
-                    if (interactionLocked) return;
+                    if (packageLocked) return;
                     analyticsEvents.paywallPackageSelected(item, {
                       blocked_feature: blockedFeature,
                       preview_only: previewOnly,
                     });
                     selectPackage(item.packageIdentifier);
                   }}
-                  disabled={interactionLocked}
+                  disabled={packageLocked}
                   style={({ pressed }) => [
                     styles.planCard,
                     selected && styles.planCardSelected,
-                    interactionLocked && styles.planCardDisabled,
-                    pressed && !interactionLocked && styles.planCardPressed,
+                    packageLocked && styles.planCardDisabled,
+                    pressed && !packageLocked && styles.planCardPressed,
                   ]}
                 >
                   <View style={styles.planHeaderRow}>

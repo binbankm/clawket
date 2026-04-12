@@ -2,6 +2,7 @@ import {
   classifyProPurchaseError,
   deriveProSubscriptionSnapshot,
   hasLifetimeProAccess,
+  isRevenueCatPackagePurchaseLocked,
   resetRevenueCatForTests,
   resolveRevenueCatConfig,
   selectActiveRecurringRevenueCatPackage,
@@ -11,6 +12,7 @@ import {
   selectRevenueCatPackages,
   selectSnapshotRevenueCatPackageByMetadata,
   toProPaywallPackage,
+  type ProSubscriptionSnapshot,
 } from './pro-subscription';
 import { buildAnalyticsSubscriptionProperties } from './analytics/subscription-context';
 
@@ -477,6 +479,58 @@ describe('selectRevenueCatPackages', () => {
       requestDate: null,
       verification: null,
     })).toBe(false);
+  });
+
+  it('locks recurring packages but keeps lifetime purchasable for active recurring subscribers', () => {
+    const packages = [toProPaywallPackage(monthlyPackage), toProPaywallPackage(annualPackage), toProPaywallPackage(lifetimePackage)];
+    const snapshot: ProSubscriptionSnapshot = {
+      isActive: true,
+      entitlementId: 'pro',
+      productIdentifier: 'monthly',
+      productPlanIdentifier: null,
+      activeSubscriptionProductIdentifiers: ['monthly'],
+      purchasedProductIdentifiers: ['monthly'],
+      nonSubscriptionProductIdentifiers: [],
+      originalPurchaseDate: null,
+      latestPurchaseDate: null,
+      expirationDate: null,
+      willRenew: true,
+      store: 'APP_STORE',
+      managementURL: null,
+      originalAppUserId: '$RCAnonymousID:test',
+      requestDate: null,
+      verification: null,
+    };
+
+    expect(isRevenueCatPackagePurchaseLocked(packages[0], packages, snapshot)).toBe(true);
+    expect(isRevenueCatPackagePurchaseLocked(packages[1], packages, snapshot)).toBe(true);
+    expect(isRevenueCatPackagePurchaseLocked(packages[2], packages, snapshot)).toBe(false);
+  });
+
+  it('locks every package once lifetime access is already owned', () => {
+    const packages = [toProPaywallPackage(monthlyPackage), toProPaywallPackage(annualPackage), toProPaywallPackage(lifetimePackage)];
+    const snapshot: ProSubscriptionSnapshot = {
+      isActive: true,
+      entitlementId: 'pro',
+      productIdentifier: 'lifetime',
+      productPlanIdentifier: null,
+      activeSubscriptionProductIdentifiers: [],
+      purchasedProductIdentifiers: ['monthly', 'lifetime'],
+      nonSubscriptionProductIdentifiers: ['lifetime'],
+      originalPurchaseDate: null,
+      latestPurchaseDate: null,
+      expirationDate: null,
+      willRenew: false,
+      store: 'APP_STORE',
+      managementURL: null,
+      originalAppUserId: '$RCAnonymousID:test',
+      requestDate: null,
+      verification: null,
+    };
+
+    expect(isRevenueCatPackagePurchaseLocked(packages[0], packages, snapshot)).toBe(true);
+    expect(isRevenueCatPackagePurchaseLocked(packages[1], packages, snapshot)).toBe(true);
+    expect(isRevenueCatPackagePurchaseLocked(packages[2], packages, snapshot)).toBe(true);
   });
 
   it('selects the owned lifetime package from purchased identifiers', () => {

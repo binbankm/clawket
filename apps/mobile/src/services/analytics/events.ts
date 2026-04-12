@@ -459,4 +459,16 @@ export const analyticsEvents = {
   }): void {
     captureAnalyticsEvent('paywall_restore_failed', properties);
   },
+
+  lifetimeUpgradeAnnouncementShown(properties: {
+    source: string;
+  }): void {
+    captureAnalyticsEvent('lifetime_upgrade_announcement_shown', properties);
+  },
+
+  lifetimeUpgradeAnnouncementDismissed(properties: {
+    source: string;
+  }): void {
+    captureAnalyticsEvent('lifetime_upgrade_announcement_dismissed', properties);
+  },
 };

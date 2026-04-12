@@ -20,7 +20,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import { ScrollView } from 'react-native-gesture-handler';
 import { EdgeInsets } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useIsFocused, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AppWindow, ChevronLeft, ChevronRight, Cloud, Eye, Gamepad2, Github, HelpCircle, Mic, Palette, Share2, ShieldCheck, Link2, Mail, MessageCircleMore, Minus, Plus, ScanLine, Sparkles, Star, ImageUp } from 'lucide-react-native';
 import { ConnectionHelpQuick, ConnectionHelpManual } from '../../components/config/ConnectionHelpSection';
@@ -32,8 +32,10 @@ import { getPostHogDiagnostics, type PostHogDiagnostics } from '../../services/a
 import {
   collectRevenueCatDiagnostics,
   getRevenueCatRuntimeDiagnostics,
+  hasLifetimeProAccessFromSnapshot,
   type RevenueCatDiagnostics,
 } from '../../services/pro-subscription';
+import { StorageService } from '../../services/storage';
 import { AppTheme, builtInAccents, BuiltInAccentColorId } from '../../theme';
 import { FontSize, FontWeight, Radius, Shadow, Space } from '../../theme/tokens';
 import { GatewayBackendKind, GatewayMode, GatewayTransportKind, SpeechRecognitionLanguage, ThemeMode } from '../../types';
@@ -174,8 +176,10 @@ export function ConfigScreenLayout({ insets, tabBarHeight, controller }: Props):
     showPaywall,
     showPaywallPreview,
     snapshot,
+    refreshSubscription,
   } = useProPaywall();
   const configNavigation = useNavigation<NativeStackNavigationProp<ConfigStackParamList>>();
+  const isFocused = useIsFocused();
   const { theme } = controller;
   const styles = useMemo(() => createStyles(theme.colors), [theme]);
   const THEME_OPTIONS = useMemo(() => getThemeOptions(t), [t]);
@@ -199,6 +203,8 @@ export function ConfigScreenLayout({ insets, tabBarHeight, controller }: Props):
   const supportEmailUrl = buildSupportEmailUrl(publicAppLinks.supportEmail);
   const [wecomModalVisible, setWecomModalVisible] = useState(false);
   const [appIconModalVisible, setAppIconModalVisible] = useState(false);
+  const [lifetimeUpgradeAnnouncementVisible, setLifetimeUpgradeAnnouncementVisible] = useState(false);
+  const [lifetimeUpgradeAnnouncementHandled, setLifetimeUpgradeAnnouncementHandled] = useState(false);
   const [appIconSupported, setAppIconSupported] = useState(false);
   const [appIconLoading, setAppIconLoading] = useState(true);
   const [appIconPending, setAppIconPending] = useState(false);
@@ -256,6 +262,79 @@ export function ConfigScreenLayout({ insets, tabBarHeight, controller }: Props):
     }, 1000);
     return () => clearInterval(interval);
   }, [controller.debugMode]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (debugOverrideEnabled) return undefined;
+      void refreshSubscription().catch(() => {});
+      return undefined;
+    }, [debugOverrideEnabled, refreshSubscription]),
+  );
+
+  useEffect(() => {
+    if (isFocused) return;
+    setLifetimeUpgradeAnnouncementVisible(false);
+  }, [isFocused]);
+
+  useEffect(() => {
+    if (debugOverrideEnabled) return;
+    if (!isFocused || lifetimeUpgradeAnnouncementHandled || lifetimeUpgradeAnnouncementVisible) return;
+    if (!hasLifetimeProAccessFromSnapshot(snapshot)) return;
+
+    let cancelled = false;
+
+    const maybeShowLifetimeUpgradeAnnouncement = async () => {
+      const shown = await StorageService.hasLifetimeUpgradeAnnouncementBeenShown();
+      if (cancelled) return;
+      if (shown) {
+        setLifetimeUpgradeAnnouncementHandled(true);
+        return;
+      }
+      analyticsEvents.lifetimeUpgradeAnnouncementShown({ source: 'config_tab' });
+      setLifetimeUpgradeAnnouncementVisible(true);
+    };
+
+    void maybeShowLifetimeUpgradeAnnouncement();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    debugOverrideEnabled,
+    isFocused,
+    lifetimeUpgradeAnnouncementHandled,
+    lifetimeUpgradeAnnouncementVisible,
+    snapshot,
+  ]);
+
+  const handleLifetimeUpgradeAnnouncementClose = useCallback(() => {
+    setLifetimeUpgradeAnnouncementVisible(false);
+    setLifetimeUpgradeAnnouncementHandled(true);
+    analyticsEvents.lifetimeUpgradeAnnouncementDismissed({ source: 'config_tab' });
+    void StorageService.markLifetimeUpgradeAnnouncementShown();
+  }, []);
+
+  const handleClearLifetimeUpgradeAnnouncementCache = useCallback(() => {
+    Alert.alert(
+      t('Clear Cache'),
+      t('This will clear the lifetime upgrade announcement cache so the popup can be shown again. Continue?'),
+      [
+        { text: t('Cancel', { ns: 'common' }), style: 'cancel' },
+        {
+          text: t('Clear Cache'),
+          style: 'destructive',
+          onPress: () => {
+            void (async () => {
+              await StorageService.clearLifetimeUpgradeAnnouncementShown();
+              setLifetimeUpgradeAnnouncementHandled(false);
+              setLifetimeUpgradeAnnouncementVisible(false);
+              Alert.alert(t('Done', { ns: 'common' }), t('Lifetime upgrade announcement cache cleared.'));
+            })();
+          },
+        },
+      ],
+    );
+  }, [t]);
 
   useEffect(() => {
     let cancelled = false;
@@ -964,6 +1043,22 @@ export function ConfigScreenLayout({ insets, tabBarHeight, controller }: Props):
               thumbColor={controller.debugMode ? theme.colors.primary : theme.colors.surfaceMuted}
             />
           </View>
+
+          {controller.debugMode ? (
+            <>
+              <View style={styles.divider} />
+
+              <Pressable
+                onPress={handleClearLifetimeUpgradeAnnouncementCache}
+                style={({ pressed }) => [styles.row, styles.feedbackRow, pressed && styles.rowPressed]}
+              >
+                <View style={styles.supportRowText}>
+                  <Text style={styles.rowLabel}>{t('Clear Cache')}</Text>
+                  <Text style={styles.rowMeta}>{t('Clear the one-time lifetime upgrade popup cache.')}</Text>
+                </View>
+              </Pressable>
+            </>
+          ) : null}
         </View>
 
         {controller.debugMode ? (
@@ -1125,6 +1220,28 @@ export function ConfigScreenLayout({ insets, tabBarHeight, controller }: Props):
           ) : null}
         </View>
       </ScrollView>
+
+      <ModalSheet
+        visible={lifetimeUpgradeAnnouncementVisible}
+        onClose={handleLifetimeUpgradeAnnouncementClose}
+        title={t("You're Lifetime Pro Now")}
+        maxHeight={300}
+      >
+        <View style={styles.lifetimeUpgradeAnnouncementBody}>
+          <Text style={styles.lifetimeUpgradeAnnouncementText}>
+            {t('Thanks for supporting Clawket. To thank our early supporters, everyone who purchased an annual membership before April 12 has been automatically upgraded to lifetime membership.')}
+          </Text>
+          <Pressable
+            onPress={handleLifetimeUpgradeAnnouncementClose}
+            style={({ pressed }) => [
+              styles.lifetimeUpgradeAnnouncementButton,
+              pressed && styles.lifetimeUpgradeAnnouncementButtonPressed,
+            ]}
+          >
+            <Text style={styles.lifetimeUpgradeAnnouncementButtonText}>{t('Got it')}</Text>
+          </Pressable>
+        </View>
+      </ModalSheet>
 
       <ModalSheet
         visible={wecomModalVisible}
@@ -1614,6 +1731,33 @@ function createStyles(colors: Colors) {
       paddingHorizontal: Space.lg,
       paddingTop: Space.sm,
       paddingBottom: Space.lg,
+    },
+    lifetimeUpgradeAnnouncementBody: {
+      gap: Space.lg,
+      paddingHorizontal: Space.lg,
+      paddingVertical: Space.xl,
+    },
+    lifetimeUpgradeAnnouncementText: {
+      color: colors.text,
+      fontSize: FontSize.lg,
+      lineHeight: 24,
+      textAlign: 'center',
+    },
+    lifetimeUpgradeAnnouncementButton: {
+      alignItems: 'center',
+      justifyContent: 'center',
+      minHeight: 48,
+      borderRadius: Radius.md,
+      backgroundColor: colors.primary,
+      paddingHorizontal: Space.lg,
+    },
+    lifetimeUpgradeAnnouncementButtonPressed: {
+      opacity: 0.88,
+    },
+    lifetimeUpgradeAnnouncementButtonText: {
+      color: colors.primaryText,
+      fontSize: FontSize.base,
+      fontWeight: FontWeight.semibold,
     },
     appIconCard: {
       alignItems: 'center',

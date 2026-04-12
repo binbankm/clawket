@@ -268,4 +268,23 @@ describe('StorageService gateway config backups', () => {
 
     expect(secureStoreValues).toEqual({});
   });
+
+  it('persists the lifetime upgrade announcement shown flag', async () => {
+    mockedAsyncStorage.getItem.mockResolvedValueOnce(null);
+    await expect(StorageService.hasLifetimeUpgradeAnnouncementBeenShown()).resolves.toBe(false);
+
+    await StorageService.markLifetimeUpgradeAnnouncementShown();
+    expect(mockedAsyncStorage.setItem).toHaveBeenCalledWith(
+      'clawket.lifetimeUpgradeAnnouncementShown.v1',
+      '1',
+    );
+
+    mockedAsyncStorage.getItem.mockResolvedValueOnce('1');
+    await expect(StorageService.hasLifetimeUpgradeAnnouncementBeenShown()).resolves.toBe(true);
+
+    await StorageService.clearLifetimeUpgradeAnnouncementShown();
+    expect(mockedAsyncStorage.removeItem).toHaveBeenCalledWith(
+      'clawket.lifetimeUpgradeAnnouncementShown.v1',
+    );
+  });
 });

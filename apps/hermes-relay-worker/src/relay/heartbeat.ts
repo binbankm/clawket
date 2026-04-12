@@ -1,5 +1,6 @@
 import {
   CONNECT_START_BUFFER_TTL_MS,
+  GATEWAY_PING_TIMEOUT_DEFAULT_MS,
   SOCKET_CLOSE_CODES,
 } from './types';
 import {
@@ -27,6 +28,60 @@ export function hasOpenClients(runtime: RelayRuntime): boolean {
     if (ws.readyState === WebSocket.OPEN) return true;
   }
   return false;
+}
+
+export function reconcileGatewayLiveness(runtime: RelayRuntime, now: number): void {
+  const bridge = runtime.bridgeSocket;
+  if (!bridge || bridge.readyState !== WebSocket.OPEN || !hasOpenClients(runtime)) {
+    runtime.pendingGatewayPingAt = 0;
+    runtime.gatewayPingCapability = bridge && bridge.readyState === WebSocket.OPEN ? runtime.gatewayPingCapability : 'unknown';
+    return;
+  }
+
+  if (runtime.gatewayPingCapability === 'unsupported') {
+    runtime.pendingGatewayPingAt = 0;
+    return;
+  }
+
+  const timeoutMs = parsePositiveInt(runtime.env.GATEWAY_PING_TIMEOUT_MS, GATEWAY_PING_TIMEOUT_DEFAULT_MS);
+  if (runtime.pendingGatewayPingAt > 0) {
+    if (runtime.bridgeLastActivityAt >= runtime.pendingGatewayPingAt) {
+      runtime.pendingGatewayPingAt = 0;
+      return;
+    }
+    if (now - runtime.pendingGatewayPingAt < timeoutMs) {
+      return;
+    }
+    runtime.pendingGatewayPingAt = 0;
+    if (runtime.gatewayPingCapability !== 'supported') {
+      runtime.gatewayPingCapability = 'unsupported';
+      logRelayTelemetry('hermes_relay_worker', 'gateway_ping_unsupported_assumed', {
+        clientCount: runtime.clients.size,
+        hasBridge: true,
+        timeoutMs,
+      });
+      return;
+    }
+    logRelayTelemetry('hermes_relay_worker', 'gateway_ping_timeout', {
+      clientCount: runtime.clients.size,
+      hasBridge: true,
+      timeoutMs,
+      bridgeIdleMs: runtime.bridgeLastActivityAt > 0 ? Math.max(0, now - runtime.bridgeLastActivityAt) : null,
+    });
+    try {
+      bridge.close(SOCKET_CLOSE_CODES.IDLE_OR_STALE_TIMEOUT, 'stale_gateway_timeout');
+    } catch {
+      // Best effort cleanup; stale sockets may already be detached remotely.
+    }
+    return;
+  }
+
+  runtime.pendingGatewayPingAt = now;
+  sendControlToBridge(runtime, 'gateway_ping', { ts: now });
+  logRelayTelemetry('hermes_relay_worker', 'gateway_ping_sent', {
+    clientCount: runtime.clients.size,
+    hasBridge: true,
+  });
 }
 
 export function prunePendingConnectStarts(runtime: RelayRuntime, now: number): void {

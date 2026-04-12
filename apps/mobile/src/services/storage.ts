@@ -157,6 +157,7 @@ const KEYS = {
   userPromptsSeeded: 'clawket.userPrompts.seeded.v1',
   promptPeekShown: 'clawket.promptPeekShown.v1',
   proSubscriptionSnapshot: 'clawket.proSubscriptionSnapshot.v1',
+  lifetimeUpgradeAnnouncementShown: 'clawket.lifetimeUpgradeAnnouncementShown.v1',
   autoAppReviewState: 'clawket.autoAppReviewState.v1',
   skillListSortModePrefix: 'clawket.skillListSortMode.v1',
 } as const;
@@ -1142,6 +1143,30 @@ export const StorageService = {
   async clearProSubscriptionSnapshot(): Promise<void> {
     try {
       await AsyncStorage.removeItem(KEYS.proSubscriptionSnapshot);
+    } catch {
+      // Best-effort cache only.
+    }
+  },
+
+  async hasLifetimeUpgradeAnnouncementBeenShown(): Promise<boolean> {
+    try {
+      return (await AsyncStorage.getItem(KEYS.lifetimeUpgradeAnnouncementShown)) === '1';
+    } catch {
+      return false;
+    }
+  },
+
+  async markLifetimeUpgradeAnnouncementShown(): Promise<void> {
+    try {
+      await AsyncStorage.setItem(KEYS.lifetimeUpgradeAnnouncementShown, '1');
+    } catch {
+      // Best-effort cache only.
+    }
+  },
+
+  async clearLifetimeUpgradeAnnouncementShown(): Promise<void> {
+    try {
+      await AsyncStorage.removeItem(KEYS.lifetimeUpgradeAnnouncementShown);
     } catch {
       // Best-effort cache only.
     }

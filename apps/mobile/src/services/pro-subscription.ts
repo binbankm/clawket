@@ -516,11 +516,50 @@ export function selectDisplayedRevenueCatPackage(
     ?? selectActiveRecurringRevenueCatPackage(packages, snapshot);
 }
 
+export function hasLifetimeProAccessFromSnapshot(snapshot: ProSubscriptionSnapshot | null): boolean {
+  const nonSubscriptionIdentifiers = (snapshot?.nonSubscriptionProductIdentifiers ?? [])
+    .map((value) => value.toLowerCase());
+  if (nonSubscriptionIdentifiers.length > 0) return true;
+
+  const identifiers = [snapshot?.productPlanIdentifier, snapshot?.productIdentifier]
+    .filter((value): value is string => Boolean(value))
+    .map((value) => value.toLowerCase());
+
+  return identifiers.some((value) => (
+    value.includes('life')
+    || value.includes('forever')
+    || value.includes('permanent')
+  ));
+}
+
 export function hasLifetimeProAccess(
   packages: ProPaywallPackage[],
   snapshot: ProSubscriptionSnapshot | null,
 ): boolean {
-  return Boolean(selectOwnedLifetimeRevenueCatPackage(packages, snapshot));
+  return Boolean(selectOwnedLifetimeRevenueCatPackage(packages, snapshot))
+    || hasLifetimeProAccessFromSnapshot(snapshot);
+}
+
+export function isRecurringProPackageType(packageType: string | null | undefined): boolean {
+  return packageType === 'MONTHLY' || packageType === 'ANNUAL';
+}
+
+export function isRevenueCatPackagePurchaseLocked(
+  targetPackage: ProPaywallPackage | null,
+  packages: ProPaywallPackage[],
+  snapshot: ProSubscriptionSnapshot | null,
+): boolean {
+  if (!targetPackage) return true;
+
+  if (hasLifetimeProAccess(packages, snapshot)) {
+    return true;
+  }
+
+  if (!snapshot?.isActive) {
+    return false;
+  }
+
+  return isRecurringProPackageType(targetPackage.packageType);
 }
 
 export function toProPaywallPackage(aPackage: PurchasesPackage): ProPaywallPackage {

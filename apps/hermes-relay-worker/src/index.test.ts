@@ -815,6 +815,74 @@ describe('relay worker helpers', () => {
     expect(JSON.parse(healthyClient.sent[0])).toMatchObject({ type: 'tick' });
   });
 
+  it('does not close a gateway that has not proven gateway_pong support yet', async () => {
+    const bridgeSocket = new FakeWebSocket({
+      attachment: { role: 'gateway', clientId: 'gw-main', connectedAt: 1 },
+    });
+    const clientSocket = new FakeWebSocket({
+      attachment: { role: 'client', clientId: 'ios-client', connectedAt: 2 },
+    });
+    const { room } = createHermesRelayRoomWithSockets();
+    const relay = room as unknown as {
+      runtime: {
+        bridgeSocket: FakeWebSocket | null;
+        bridgeLastActivityAt: number;
+        pendingGatewayPingAt: number;
+        gatewayPingCapability: 'unknown' | 'supported' | 'unsupported';
+        clients: Map<string, FakeWebSocket>;
+        env: { GATEWAY_PING_TIMEOUT_MS?: string };
+      };
+    };
+
+    relay.runtime.bridgeSocket = bridgeSocket;
+    relay.runtime.clients.set('ios-client', clientSocket);
+    relay.runtime.bridgeLastActivityAt = 1_000;
+    relay.runtime.env.GATEWAY_PING_TIMEOUT_MS = '12000';
+
+    __testing.reconcileGatewayLiveness(relay.runtime as never, 10_000);
+    expect(bridgeSocket.sent).toHaveLength(1);
+    expect(bridgeSocket.closeCalls).toEqual([]);
+    expect(relay.runtime.pendingGatewayPingAt).toBe(10_000);
+    expect(relay.runtime.gatewayPingCapability).toBe('unknown');
+
+    __testing.reconcileGatewayLiveness(relay.runtime as never, 22_500);
+    expect(bridgeSocket.closeCalls).toEqual([]);
+    expect(relay.runtime.pendingGatewayPingAt).toBe(0);
+    expect(relay.runtime.gatewayPingCapability).toBe('unsupported');
+  });
+
+  it('closes a gateway after ping timeout only once gateway_pong support was proven', async () => {
+    const bridgeSocket = new FakeWebSocket({
+      attachment: { role: 'gateway', clientId: 'gw-main', connectedAt: 1 },
+    });
+    const clientSocket = new FakeWebSocket({
+      attachment: { role: 'client', clientId: 'ios-client', connectedAt: 2 },
+    });
+    const { room } = createHermesRelayRoomWithSockets();
+    const relay = room as unknown as {
+      runtime: {
+        bridgeSocket: FakeWebSocket | null;
+        bridgeLastActivityAt: number;
+        pendingGatewayPingAt: number;
+        gatewayPingCapability: 'unknown' | 'supported' | 'unsupported';
+        clients: Map<string, FakeWebSocket>;
+        env: { GATEWAY_PING_TIMEOUT_MS?: string };
+      };
+    };
+
+    relay.runtime.bridgeSocket = bridgeSocket;
+    relay.runtime.clients.set('ios-client', clientSocket);
+    relay.runtime.bridgeLastActivityAt = 1_000;
+    relay.runtime.gatewayPingCapability = 'supported';
+    relay.runtime.pendingGatewayPingAt = 10_000;
+    relay.runtime.env.GATEWAY_PING_TIMEOUT_MS = '12000';
+
+    __testing.reconcileGatewayLiveness(relay.runtime as never, 22_500);
+    expect(bridgeSocket.closeCalls).toEqual([
+      { code: __testing.SocketCloseCode.IDLE_OR_STALE_TIMEOUT, reason: 'stale_gateway_timeout' },
+    ]);
+  });
+
   it('forwards client control frames to gateway with relay-injected sourceClientId', async () => {
     const bridgeSocket = new FakeWebSocket({
       attachment: { role: 'gateway', clientId: 'gw-main', connectedAt: 1 },

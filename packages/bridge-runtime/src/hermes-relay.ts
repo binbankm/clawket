@@ -214,9 +214,30 @@ export class HermesRelayRuntime {
     const text = normalizeText(data);
     if (text == null) return;
     if (text.startsWith(RELAY_CONTROL_PREFIX)) {
+      this.handleRelayControl(text);
       return;
     }
     this.forwardOrQueueBridgeMessage({ text });
+  }
+
+  private handleRelayControl(text: string): void {
+    try {
+      const parsed = JSON.parse(text.slice(RELAY_CONTROL_PREFIX.length)) as { event?: unknown; ts?: unknown };
+      if (parsed?.event !== 'gateway_ping') {
+        return;
+      }
+      const relay = this.relaySocket;
+      if (!relay || relay.readyState !== WebSocket.OPEN) {
+        return;
+      }
+      relay.send(`${RELAY_CONTROL_PREFIX}${JSON.stringify({
+        type: 'control',
+        event: 'gateway_pong',
+        ts: typeof parsed.ts === 'number' ? parsed.ts : Date.now(),
+      })}`);
+    } catch {
+      // Ignore malformed control envelopes; normal relay traffic still flows.
+    }
   }
 
   private handleBridgeMessage(data: RawData, isBinary: boolean): void {
@@ -334,9 +355,8 @@ export class HermesRelayRuntime {
       } else {
         const payload = await response.json() as { hasBridge?: boolean };
         if (!payload?.hasBridge) {
-          this.log('bridge status probe reported hasBridge=false; restarting relay socket');
-          this.relaySocket?.close();
-          this.bridgeSocket?.close();
+          this.log('bridge status probe reported hasBridge=false; recycling relay socket');
+          this.recycleRelaySocket('bridge status probe reported hasBridge=false');
           return;
         }
       }
@@ -427,6 +447,30 @@ export class HermesRelayRuntime {
     if (!this.pendingBridgeHealthProbe) return;
     clearTimeout(this.pendingBridgeHealthProbe.timeout);
     this.pendingBridgeHealthProbe = null;
+  }
+
+  private recycleRelaySocket(reason: string): void {
+    const relay = this.relaySocket;
+    if (!relay) return;
+
+    this.relaySocket = null;
+    this.clearBridgeStatusProbe();
+    this.clearPendingBridgeHealthProbe();
+    this.updateSnapshot({
+      relayConnected: false,
+      bridgeConnected: this.bridgeSocket?.readyState === WebSocket.OPEN,
+      lastError: reason,
+    });
+
+    try {
+      relay.close();
+    } catch {
+      // Ignore close errors; we already detached the stale relay locally.
+    }
+
+    if (!this.stopped) {
+      this.scheduleRelayReconnect();
+    }
   }
 
   private isRelayOpen(): boolean {

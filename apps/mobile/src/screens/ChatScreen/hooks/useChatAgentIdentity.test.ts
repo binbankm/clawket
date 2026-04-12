@@ -308,4 +308,47 @@ describe('useChatAgentIdentity', () => {
     expect(gateway.fetchIdentity).toHaveBeenCalledWith('main');
     jest.useRealTimers();
   });
+
+  it('ignores cached identity fallback for Hermes when there is no Hermes-valid snapshot', async () => {
+    const mockedStorage = StorageService as jest.Mocked<typeof StorageService>;
+    mockedStorage.getLastOpenedSessionSnapshot.mockResolvedValueOnce({
+      sessionKey: 'agent:main:main',
+      updatedAt: 1234,
+      agentId: 'main',
+      agentName: 'Old OpenClaw Agent',
+      agentEmoji: '🤖',
+      agentAvatarUri: 'https://example.com/openclaw.png',
+    } as any);
+    mockedStorage.getCachedAgentIdentity.mockResolvedValueOnce({
+      agentId: 'main',
+      updatedAt: 1235,
+      agentName: 'Old Cached Agent',
+      agentEmoji: '🛰️',
+      agentAvatarUri: 'https://example.com/cached-openclaw.png',
+    } as any);
+
+    const gateway = createGateway('connecting');
+    const { result } = renderHook(() => useChatAgentIdentity({
+      agents: [],
+      cacheAgentName: undefined,
+      currentAgentId: 'main',
+      currentSessionInfo: undefined,
+      gateway,
+      gatewayConfigId: 'cfg:hermes',
+      initialPreview: null,
+      mainSessionKey: 'main',
+      sessionKey: '20260411_122441_d40735',
+    }));
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(result.current).toEqual({
+      displayName: 'Assistant',
+      avatarUri: null,
+      emoji: null,
+    });
+  });
 });

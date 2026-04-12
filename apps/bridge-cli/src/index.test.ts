@@ -995,6 +995,87 @@ describe('cli pairing output', () => {
     exitSpy.mockRestore();
   });
 
+  it('restarts a missing Hermes relay runtime from the service watchdog without noisy healthy logs', async () => {
+    vi.useFakeTimers();
+    const homeDir = mkdtempSync(join(tmpdir(), 'clawket-cli-service-watchdog-home-'));
+    mkdirSync(join(homeDir, '.clawket'), { recursive: true });
+    writeFileSync(
+      join(homeDir, '.clawket', 'hermes-bridge.json'),
+      JSON.stringify({
+        host: '0.0.0.0',
+        port: 4321,
+        apiBaseUrl: 'http://127.0.0.1:8642',
+        token: 'test',
+      }),
+      'utf8',
+    );
+    writeFileSync(join(homeDir, '.clawket', 'hermes-relay.json'), JSON.stringify({
+      serverUrl: 'https://hermes-registry.example.com',
+      bridgeId: 'hbg_123',
+      relaySecret: 'hrs_secret',
+      relayUrl: 'wss://hermes-relay.example.com/ws',
+      instanceId: 'hermes-host',
+      displayName: 'Hermes',
+      createdAt: '2026-04-11T00:00:00.000Z',
+      updatedAt: '2026-04-11T00:00:00.000Z',
+    }), 'utf8');
+    writeFileSync('/tmp/hermes-relay.log', '[9999999999999] [status] relay=up bridge=up\n', 'utf8');
+    vi.stubEnv('HOME', homeDir);
+    process.argv = ['node', 'clawket', 'run', '--service'];
+    readPairingConfigMock.mockReturnValue({
+      serverUrl: 'https://registry.example.com',
+      gatewayId: 'gw_test_123',
+      relaySecret: 'secret',
+      relayUrl: 'wss://relay.example.com/ws',
+      instanceId: 'inst_test',
+      displayName: 'Lucy',
+      createdAt: '2026-03-08T00:00:00.000Z',
+      updatedAt: '2026-03-08T00:00:00.000Z',
+    } as never);
+    execFileSyncMock
+      .mockReturnValueOnce('')
+      .mockReturnValueOnce(`40160 ${process.argv[1]} hermes run --host 0.0.0.0 --port 4321\n`)
+      .mockReturnValueOnce('')
+      .mockReturnValueOnce(`40161 ${process.argv[1]} hermes relay run --host 0.0.0.0 --port 4321\n`)
+      .mockReturnValueOnce(`40161 ${process.argv[1]} hermes relay run --host 0.0.0.0 --port 4321\n`)
+      .mockReturnValueOnce(`40160 ${process.argv[1]} hermes run --host 0.0.0.0 --port 4321\n`)
+      .mockReturnValueOnce('')
+      .mockReturnValueOnce(`40162 ${process.argv[1]} hermes relay run --host 0.0.0.0 --port 4321\n`)
+      .mockReturnValueOnce(`40162 ${process.argv[1]} hermes relay run --host 0.0.0.0 --port 4321\n`);
+
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation((() => undefined as never));
+    const processOnSpy = vi.spyOn(process, 'on')
+      .mockImplementation(((event: NodeJS.Signals, listener: () => void) => {
+        if (event === 'SIGTERM') {
+          setTimeout(listener, 60_000);
+        }
+        return process;
+      }) as typeof process.on);
+
+    await import('./index.js');
+
+    await vi.waitFor(() => {
+      expect(spawnMock).toHaveBeenCalledTimes(2);
+    });
+
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    await vi.waitFor(() => {
+      expect(spawnMock).toHaveBeenCalledTimes(3);
+    });
+
+    const watchdogLogs = consoleLogSpy.mock.calls
+      .map(([value]) => String(value))
+      .filter((value) => value.includes('[hermes-service]'));
+    expect(watchdogLogs.some((value) => value.includes('Started Hermes relay runtime (pid 40162).'))).toBe(true);
+    expect(watchdogLogs.some((value) => value.includes('Hermes bridge runtime already running.'))).toBe(false);
+    expect(watchdogLogs.some((value) => value.includes('Hermes relay runtime already running.'))).toBe(false);
+
+    processOnSpy.mockRestore();
+    exitSpy.mockRestore();
+    vi.useRealTimers();
+  });
+
   it('stops managed Hermes runtimes through the shared stop command', async () => {
     mkdirSync(join(process.env.HOME as string, '.clawket'), { recursive: true });
     writeFileSync(

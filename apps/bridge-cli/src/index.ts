@@ -62,6 +62,8 @@ import {
   restartOpenClawGateway,
 } from '@clawket/bridge-runtime';
 
+const HERMES_SERVICE_WATCHDOG_INTERVAL_MS = 30_000;
+
 async function main(): Promise<void> {
   const [, , command = 'help', ...args] = process.argv;
   const isServiceMode = hasFlag(args, '--service');
@@ -256,6 +258,11 @@ async function main(): Promise<void> {
       instanceId: config.instanceId,
       serviceMode: isServiceMode,
     });
+    const hermesServiceWatchdog = isServiceMode
+      ? startHermesServiceWatchdog((line) => {
+        emitRuntimeLine(`[hermes-service] ${line}`);
+      })
+      : null;
     if (isServiceMode) {
       await restoreHermesServiceRuntime((line) => {
         emitRuntimeLine(`[hermes-service] ${line}`);
@@ -265,6 +272,9 @@ async function main(): Promise<void> {
       process.off('SIGINT', shutdown);
       process.off('SIGTERM', shutdown);
       await runtime.stop();
+      if (hermesServiceWatchdog) {
+        clearInterval(hermesServiceWatchdog);
+      }
       unregisterRuntimeProcess(process.pid);
       if (isServiceMode) {
         clearServiceState(process.pid);
@@ -1324,6 +1334,21 @@ async function keepHermesBridgeAlive(bridge: HermesLocalBridge): Promise<void> {
 }
 
 async function restoreHermesServiceRuntime(log: (line: string) => void): Promise<void> {
+  await restoreHermesServiceRuntimeInternal(log, { silentIfHealthy: false });
+}
+
+function startHermesServiceWatchdog(log: (line: string) => void): NodeJS.Timeout {
+  const timer = setInterval(() => {
+    void restoreHermesServiceRuntimeInternal(log, { silentIfHealthy: true });
+  }, HERMES_SERVICE_WATCHDOG_INTERVAL_MS);
+  timer.unref?.();
+  return timer;
+}
+
+async function restoreHermesServiceRuntimeInternal(
+  log: (line: string) => void,
+  options: { silentIfHealthy: boolean },
+): Promise<void> {
   const bridgeConfig = readHermesBridgeCliConfig();
   const relayConfig = readHermesRelayConfig();
 
@@ -1341,11 +1366,13 @@ async function restoreHermesServiceRuntime(log: (line: string) => void): Promise
       config: bridgeConfig,
       replaceExisting: false,
     });
-    log(
-      bridgePid == null
-        ? 'Hermes bridge runtime already running.'
-        : `Started Hermes bridge runtime (pid ${bridgePid}).`,
-    );
+    if (bridgePid != null || !options.silentIfHealthy) {
+      log(
+        bridgePid == null
+          ? 'Hermes bridge runtime already running.'
+          : `Started Hermes bridge runtime (pid ${bridgePid}).`,
+      );
+    }
   } catch (error) {
     log(`Hermes bridge restore failed: ${formatError(error)}`);
     return;
@@ -1361,11 +1388,13 @@ async function restoreHermesServiceRuntime(log: (line: string) => void): Promise
       config: bridgeConfig,
       replaceExisting: false,
     });
-    log(
-      relayPid == null
-        ? 'Hermes relay runtime already running.'
-        : `Started Hermes relay runtime (pid ${relayPid}).`,
-    );
+    if (relayPid != null || !options.silentIfHealthy) {
+      log(
+        relayPid == null
+          ? 'Hermes relay runtime already running.'
+          : `Started Hermes relay runtime (pid ${relayPid}).`,
+      );
+    }
   } catch (error) {
     log(`Hermes relay restore failed: ${formatError(error)}`);
   }

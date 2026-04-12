@@ -363,6 +363,52 @@ describe('useChatController contract', () => {
     expect(mockedStorage.getCachedAgentIdentity).toHaveBeenCalledWith(expect.any(String), 'main');
   });
 
+  it('does not hydrate Hermes identity from legacy cached main-agent data', async () => {
+    const mockedStorage = StorageService as jest.Mocked<typeof StorageService>;
+    mockAppContext.mainSessionKey = 'main';
+    historyMock.sessionKey = '20260411_122441_d40735';
+    historyMock.sessions = [{ key: '20260411_122441_d40735', kind: 'direct' as const }];
+    mockedStorage.getLastOpenedSessionSnapshot.mockResolvedValueOnce({
+      sessionKey: 'agent:main:main',
+      updatedAt: 1_700_000_000_000,
+      agentId: 'main',
+      agentName: 'Snapshot Agent',
+      agentEmoji: '🤖',
+      agentAvatarUri: 'https://example.com/avatar.png',
+    } as any);
+    mockedStorage.getCachedAgentIdentity.mockResolvedValueOnce({
+      agentId: 'main',
+      updatedAt: 1_700_000_000_001,
+      agentName: 'Cached Agent',
+      agentEmoji: '🛰️',
+      agentAvatarUri: 'https://example.com/cached-avatar.png',
+    } as any);
+
+    const gateway = createGateway('connecting');
+    const { result } = renderHook(() =>
+      useChatController({
+        gateway: gateway as any,
+        config: {
+          mode: 'hermes',
+          backendKind: 'hermes',
+          url: 'http://localhost:4319/v1/hermes/ws',
+          hermes: { bridgeUrl: 'http://localhost:4319' },
+        } as any,
+        debugMode: false,
+        showAgentAvatar: true,
+      } as any),
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(result.current.agentDisplayName).toBe('Assistant');
+    expect(result.current.agentEmoji).toBeNull();
+    expect(result.current.agentAvatarUri).toBeNull();
+  });
+
   it('does not write legacy last-session state when switching sessions', async () => {
     const mockedStorage = StorageService as jest.Mocked<typeof StorageService>;
     historyMock.sessions = [

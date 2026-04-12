@@ -568,6 +568,7 @@ export class HermesLocalBridge {
   private hermesChild: ChildProcess | null = null;
   private modelStateCache: { value: HermesModelState; expiresAt: number } | null = null;
   private readonly contextWindowCache = new Map<string, number | null>();
+  private bridgeRequestSeq = 0;
 
   constructor(private readonly options: HermesLocalBridgeOptions = {}) {
     this.host = normalizeHost(options.host);
@@ -954,30 +955,43 @@ export class HermesLocalBridge {
   private async dispatchRequest(method: string, params: unknown): Promise<unknown> {
     const payload = isRecord(params) ? params : {};
     const shouldTracePerf = method === 'health'
+      || method === 'last-heartbeat'
       || method === 'sessions.list'
       || method === 'chat.history'
-      || method === 'chat.send';
+      || method === 'chat.send'
+      || method === 'models.list'
+      || method === 'model.current'
+      || method === 'model.get';
     const requestStartedAt = shouldTracePerf ? Date.now() : 0;
+    const requestSeq = shouldTracePerf ? ++this.bridgeRequestSeq : 0;
+    if (shouldTracePerf) {
+      this.logPerf('bridge_request_begin', {
+        requestSeq,
+        method,
+        sessionKey: readString(payload.sessionKey) || undefined,
+        limit: readPositiveInt(payload.limit, 0) || undefined,
+      });
+    }
     switch (method) {
       case 'health':
       case 'last-heartbeat':
-        return this.traceBridgeRequest(method, requestStartedAt, {
+        return this.traceBridgeRequest(method, requestStartedAt, requestSeq, {
           status: this.snapshot.hermesApiReachable ? 'ok' : 'degraded',
           ts: Date.now(),
           hermesApiReachable: this.snapshot.hermesApiReachable,
         });
       case 'sessions.list':
-        return this.traceBridgeRequest(method, requestStartedAt, {
+        return this.traceBridgeRequest(method, requestStartedAt, requestSeq, {
           defaults: this.getHermesSessionListDefaults(),
           sessions: this.listHermesSessions(readPositiveInt(payload.limit, 100)),
         });
       case 'chat.history':
-        return this.traceBridgeRequest(method, requestStartedAt, this.getHermesSessionHistory(
+        return this.traceBridgeRequest(method, requestStartedAt, requestSeq, this.getHermesSessionHistory(
           readString(payload.sessionKey) || DEFAULT_SESSION_ID,
           readPositiveInt(payload.limit, 50),
         ));
       case 'chat.send':
-        return this.traceBridgeRequest(method, requestStartedAt, this.handleChatSend(payload));
+        return this.traceBridgeRequest(method, requestStartedAt, requestSeq, this.handleChatSend(payload));
       case 'sessions.reset':
         this.cancelActiveRunsForSession(readString(payload.key) || DEFAULT_SESSION_ID);
         this.sessionStore.resetSession(readString(payload.key) || DEFAULT_SESSION_ID);
@@ -1116,10 +1130,16 @@ export class HermesLocalBridge {
     }
   }
 
-  private async traceBridgeRequest<T>(method: string, startedAt: number, value: T | Promise<T>): Promise<T> {
+  private async traceBridgeRequest<T>(
+    method: string,
+    startedAt: number,
+    requestSeq: number,
+    value: T | Promise<T>,
+  ): Promise<T> {
     const result = await value;
     if (startedAt > 0) {
       this.logPerf('bridge_request', {
+        requestSeq,
         method,
         elapsedMs: Date.now() - startedAt,
       });
@@ -4325,9 +4345,7 @@ export class HermesLocalBridge {
         .map(([key, value]) => `${key}=${String(value)}`)
         .join(' ')
       : '';
-    // this.log(`[perf] ${event}${payload ? ` ${payload}` : ''}`);
-    void event;
-    void payload;
+    this.log(`[perf] ${event}${payload ? ` ${payload}` : ''}`);
   }
 
   private async hydrateToolOutputsFromHermesState(params: {

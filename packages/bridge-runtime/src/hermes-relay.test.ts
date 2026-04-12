@@ -102,7 +102,7 @@ describe('hermes relay runtime helpers', () => {
     await runtime.stop();
   });
 
-  it('restarts relay and bridge sockets when cloud bridge status reports hasBridge=false', async () => {
+  it('recycles only the relay socket when cloud bridge status reports hasBridge=false', async () => {
     const sockets: FakeSocket[] = [];
     const logs: string[] = [];
     const fetchCalls: Array<{ url: string; headers?: Record<string, string> }> = [];
@@ -110,6 +110,8 @@ describe('hermes relay runtime helpers', () => {
       config: createConfig(),
       bridgeUrl: 'ws://127.0.0.1:4319/v1/hermes/ws?token=secret',
       bridgeStatusPollIntervalMs: 1,
+      reconnectBaseDelayMs: 1,
+      reconnectMaxDelayMs: 1,
       fetchImpl: (async (url: string | URL | Request, init?: RequestInit) => {
         fetchCalls.push({
           url: String(url),
@@ -145,9 +147,11 @@ describe('hermes relay runtime helpers', () => {
       authorization: 'Bearer hrs_secret',
       accept: 'application/json',
     });
-    expect(logs).toContain('bridge status probe reported hasBridge=false; restarting relay socket');
+    expect(logs).toContain('bridge status probe reported hasBridge=false; recycling relay socket');
     expect(relaySocket.readyState).toBe(FakeSocket.CLOSED);
-    expect(bridgeSocket.readyState).toBe(FakeSocket.CLOSED);
+    expect(bridgeSocket.readyState).toBe(FakeSocket.OPEN);
+    expect(sockets.length).toBeGreaterThanOrEqual(3);
+    expect(sockets[2]?.url).toContain('wss://relay.example.com/ws');
 
     await runtime.stop();
   });

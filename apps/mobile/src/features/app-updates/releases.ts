@@ -53,7 +53,7 @@ export const APP_UPDATE_RELEASES: AppUpdateRelease[] = [
     entries: [
       {
         id: 'hermes-full-support',
-        emoji: '⚡',
+        emoji: '🪽',
         title: 'Hermes Full Support',
         subtitle: 'Connect and manage Hermes and OpenClaw at the same time.',
         action: {

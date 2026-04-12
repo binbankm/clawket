@@ -11,7 +11,14 @@ import {
   resolveAwaitingChallengeClientId,
   shouldEmitClientControlAfterSocketEvent,
 } from './relay/frames';
-import { dropClientState, ensureHeartbeat, pruneExpiredAwaitingChallenges, prunePendingConnectStarts, pruneStaleHandshakeClients } from './relay/heartbeat';
+import {
+  dropClientState,
+  ensureHeartbeat,
+  pruneExpiredAwaitingChallenges,
+  prunePendingConnectStarts,
+  pruneStaleHandshakeClients,
+  reconcileGatewayLiveness,
+} from './relay/heartbeat';
 import { RelayRuntime, touchClientActivity, touchBridgeActivity } from './relay/runtime';
 import {
   allowMessage,
@@ -45,6 +52,12 @@ import {
   type Env,
   type SocketAttachment,
 } from './relay/types';
+
+function toTraceHint(traceId: string | null | undefined): string | undefined {
+  const trimmed = traceId?.trim();
+  if (!trimmed) return undefined;
+  return trimmed.slice(-8);
+}
 
 export default {
   async fetch(request, env): Promise<Response> {
@@ -204,6 +217,7 @@ export class HermesRelayRoom {
         logRelayTelemetry('hermes_relay_worker', 'bridge_owner_locked', {
           role: query.role,
           hasBridge: Boolean(this.runtime.bridgeSocket?.readyState === WebSocket.OPEN),
+          traceHint: toTraceHint(traceId),
         });
         return errorResponse('GATEWAY_OWNER_LOCKED', 'Bridge owner is locked by another active bridge runtime', 409);
       }
@@ -247,6 +261,7 @@ export class HermesRelayRoom {
       authSource,
       clientCount: this.runtime.clients.size,
       hasBridge: Boolean(this.runtime.bridgeSocket?.readyState === WebSocket.OPEN),
+      traceHint: toTraceHint(traceId),
     });
 
     void ensureHeartbeat(this.runtime);
@@ -314,6 +329,7 @@ export class HermesRelayRoom {
     pruneStaleHandshakeClients(this.runtime, now);
     pruneExpiredAwaitingChallenges(this.runtime, now);
     prunePendingConnectStarts(this.runtime, now);
+    reconcileGatewayLiveness(this.runtime, now);
     const flushedChallenge = flushPendingChallenge(this.runtime, now);
     const payload = JSON.stringify({ type: 'tick', ts: now });
     const deadClients: Array<{ clientId: string; socket: WebSocket }> = [];
@@ -365,6 +381,8 @@ export class HermesRelayRoom {
     if (!attachment) return;
 
     if (attachment.role === 'gateway') {
+      this.runtime.pendingGatewayPingAt = 0;
+      this.runtime.gatewayPingCapability = 'unknown';
       if (this.runtime.bridgeSocket === ws) {
         this.runtime.bridgeSocket = null;
         this.runtime.pendingChallenge = null;
@@ -397,6 +415,8 @@ export class HermesRelayRoom {
       reason,
       clientCount: this.runtime.clients.size,
       hasBridge: Boolean(this.runtime.bridgeSocket?.readyState === WebSocket.OPEN),
+      traceHint: toTraceHint(attachment.traceId),
+      socketAgeMs: Date.now() - attachment.connectedAt,
     });
 
     await ensureHeartbeat(this.runtime);
@@ -435,10 +455,12 @@ export const __testing = {
   resolveAwaitingChallengeClientId,
   handleClientConnected,
   flushPendingChallenge,
+  reconcileGatewayLiveness,
   rehydrateSockets,
   reconcileSockets,
   replaceBridge,
   SocketCloseCode: {
+    IDLE_OR_STALE_TIMEOUT: SOCKET_CLOSE_CODES.IDLE_OR_STALE_TIMEOUT,
     DEAD_SOCKET: SOCKET_CLOSE_CODES.DEAD_SOCKET,
     BRIDGE_UNAVAILABLE: SOCKET_CLOSE_CODES.BRIDGE_UNAVAILABLE,
   },

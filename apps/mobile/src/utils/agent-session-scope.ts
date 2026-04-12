@@ -32,7 +32,10 @@ export function isSessionKeyInAgentScope(
 ): boolean {
   const normalizedSessionKey = sessionKey?.trim();
   if (isBackendScopedMainSessionKey(options?.mainSessionKey)) {
-    return !!normalizedSessionKey;
+    if (!normalizedSessionKey) return false;
+    // Backend-scoped sessions (Hermes phase 1) should not accept legacy
+    // per-agent OpenClaw keys during startup cache restoration.
+    return !normalizedSessionKey.startsWith('agent:');
   }
   const prefix = agentSessionPrefix(agentId);
   if (!normalizedSessionKey || !prefix) return false;
@@ -46,6 +49,14 @@ export function sanitizeSnapshotForAgent<T extends SessionSnapshotLike>(
 ): T | null {
   if (!snapshot) return null;
   if (!isSessionKeyInAgentScope(snapshot.sessionKey, agentId, options)) return null;
+  if (
+    isBackendScopedMainSessionKey(options?.mainSessionKey)
+    && snapshot.agentId?.trim()
+    && agentId?.trim()
+    && snapshot.agentId.trim() !== agentId.trim()
+  ) {
+    return null;
+  }
   if (
     !isBackendScopedMainSessionKey(options?.mainSessionKey)
     && snapshot.agentId?.trim()

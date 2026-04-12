@@ -12,7 +12,11 @@ import {
   buildPrimarySessionPreview,
   PRIMARY_CACHED_AGENT_ID,
 } from '../utils/primary-session-cache';
-import { resolveMainSessionKey, sanitizeSnapshotForAgent } from '../utils/agent-session-scope';
+import {
+  isBackendScopedMainSessionKey,
+  resolveMainSessionKey,
+  sanitizeSnapshotForAgent,
+} from '../utils/agent-session-scope';
 
 type Props = {
   gateway: GatewayClient;
@@ -149,6 +153,7 @@ export function useAppBootstrap({ gateway, nodeClient }: Props) {
               gatewayScopeId,
               initialAgent,
             ).catch(() => null);
+            const allowCachedIdentityFallback = !isBackendScopedMainSessionKey(globalMainSessionKey) || Boolean(snapshot);
             setInitialChatPreview(
               snapshot
                 ? {
@@ -157,7 +162,11 @@ export function useAppBootstrap({ gateway, nodeClient }: Props) {
                   agentEmoji: snapshot.agentEmoji ?? cachedAgentIdentity?.agentEmoji,
                   agentAvatarUri: snapshot.agentAvatarUri ?? cachedAgentIdentity?.agentAvatarUri,
                 }
-                : buildAgentPreview(initialAgent, backendKind, cachedAgentIdentity),
+                : buildAgentPreview(
+                  initialAgent,
+                  backendKind,
+                  allowCachedIdentityFallback ? cachedAgentIdentity : null,
+                ),
             );
             setInitialAgentId(initialAgent);
           })

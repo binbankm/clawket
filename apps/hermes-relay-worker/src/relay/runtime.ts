@@ -13,6 +13,8 @@ import { parsePositiveInt } from './utils';
 export class RelayRuntime {
   bridgeSocket: WebSocket | null = null;
   bridgeLastActivityAt = 0;
+  pendingGatewayPingAt = 0;
+  gatewayPingCapability: 'unknown' | 'supported' | 'unsupported' = 'unknown';
   readonly clients = new Map<string, WebSocket>();
   readonly rate = new WeakMap<WebSocket, RateState>();
   bridgeOwner: BridgeOwnerRecord | null = null;

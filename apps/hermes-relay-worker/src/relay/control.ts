@@ -15,6 +15,8 @@ export function replaceBridge(runtime: RelayRuntime, nextGateway: WebSocket): vo
     runtime.bridgeSocket.close(SOCKET_CLOSE_CODES.REPLACED_BY_NEW_BRIDGE, 'replaced_by_new_bridge');
   }
   runtime.bridgeSocket = nextGateway;
+  runtime.pendingGatewayPingAt = 0;
+  runtime.gatewayPingCapability = 'unknown';
 }
 
 export function parseControlEnvelope(text: string): RelayControlEnvelope | null {

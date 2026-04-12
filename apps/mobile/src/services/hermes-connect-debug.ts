@@ -33,10 +33,7 @@ function logHermesConnect(event: string, fields?: Record<string, unknown>): void
       .join(' ')
     : '';
   const elapsedMs = Date.now() - activeTrace.startedAt;
-  // console.log(
-  //   `[hermes-connect] trace=${activeTrace.id} event=${event} elapsedMs=${elapsedMs}${payload ? ` ${payload}` : ''}`,
-  // );
-  void event;
-  void payload;
-  void elapsedMs;
+  console.log(
+    `[hermes-connect] trace=${activeTrace.id} event=${event} elapsedMs=${elapsedMs}${payload ? ` ${payload}` : ''}`,
+  );
 }

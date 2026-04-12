@@ -243,6 +243,15 @@ export async function handleBridgeMessage(
   if (text.startsWith(CONTROL_PREFIX)) {
     const gatewayControl = parseControlEnvelope(text);
     if (gatewayControl) {
+      if (gatewayControl.event === 'gateway_pong') {
+        runtime.pendingGatewayPingAt = 0;
+        runtime.gatewayPingCapability = 'supported';
+        logRelayTelemetry('hermes_relay_worker', 'gateway_pong_received', {
+          role: 'gateway',
+          clientCount: runtime.clients.size,
+        });
+        return;
+      }
       routeGatewayControl(runtime, attachment, gatewayControl);
     } else {
       logRelayTelemetry('hermes_relay_worker', 'bridge_control_invalid', {

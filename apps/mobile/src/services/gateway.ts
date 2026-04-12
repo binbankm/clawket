@@ -2379,9 +2379,8 @@ export class GatewayClient {
       .filter(([, value]) => value !== undefined && value !== null)
       .map(([key, value]) => `${key}=${this.serializeHermesTelemetryValue(value)}`)
       .join(' ');
-    // console.log(`[hermes-connect] gateway_event=${event} ${serialized}`);
-    // markHermesConnectTrace(`gateway_${event}`, fields);
-    void serialized;
+    console.log(`[hermes-connect] gateway_event=${event} ${serialized}`);
+    markHermesConnectTrace(`gateway_${event}`, fields);
   }
 
   private shouldLogHermesTelemetryEvent(event: string): boolean {
@@ -2408,6 +2407,10 @@ export class GatewayClient {
       case 'relay_bootstrap_fallback_legacy':
       case 'stale_transport_recovered':
       case 'tick_watchdog_stale':
+      case 'req_sent':
+      case 'req_ok':
+      case 'req_err':
+      case 'req_timeout':
         return true;
       default:
         return false;
@@ -2425,7 +2428,20 @@ export class GatewayClient {
   }
 
   private shouldTraceRequest(method: string): boolean {
-    return method === 'connect';
+    switch (method) {
+      case 'connect':
+      case 'sessions.list':
+      case 'chat.history':
+      case 'last-heartbeat':
+      case 'agents.list':
+      case 'agent.identity.get':
+      case 'models.list':
+      case 'model.current':
+      case 'model.get':
+        return true;
+      default:
+        return false;
+    }
   }
 
   private emitBlockedReconnectError(): void {

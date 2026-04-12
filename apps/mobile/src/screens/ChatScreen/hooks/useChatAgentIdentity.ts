@@ -4,6 +4,7 @@ import { SessionInfo } from '../../../types';
 import { AgentInfo } from '../../../types/agent';
 import { sessionLabel } from '../../../utils/chat-message';
 import {
+  isBackendScopedMainSessionKey,
   isSessionKeyInAgentScope,
   sanitizeSnapshotForAgent,
 } from '../../../utils/agent-session-scope';
@@ -98,15 +99,16 @@ export function useChatAgentIdentity({
     ])
       .then(([snapshot, cachedIdentity]) => {
         if (cancelled) return;
+        const allowCachedIdentityFallback = !isBackendScopedMainSessionKey(mainSessionKey) || Boolean(snapshot);
         setAgentIdentity((prev) => {
           const nextDisplayName = snapshot?.agentName?.trim()
-            || cachedIdentity?.agentName?.trim()
+            || (allowCachedIdentityFallback ? cachedIdentity?.agentName?.trim() : undefined)
             || prev.displayName;
           const nextAvatarUri = snapshot?.agentAvatarUri?.trim()
-            || cachedIdentity?.agentAvatarUri?.trim()
+            || (allowCachedIdentityFallback ? cachedIdentity?.agentAvatarUri?.trim() : undefined)
             || prev.avatarUri;
           const nextEmoji = snapshot?.agentEmoji?.trim()
-            || cachedIdentity?.agentEmoji?.trim()
+            || (allowCachedIdentityFallback ? cachedIdentity?.agentEmoji?.trim() : undefined)
             || prev.emoji;
           if (
             nextDisplayName === prev.displayName
