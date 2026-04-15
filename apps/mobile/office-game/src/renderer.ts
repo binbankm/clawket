@@ -85,12 +85,25 @@ export function initRenderer(canvasEl: HTMLCanvasElement): void {
 
 function resizeCanvasForViewport(): void {
   if (!canvas) return;
+  const dpr = window.devicePixelRatio || 1;
   const viewportWidth = window.innerWidth || VIRTUAL_WIDTH;
   const scale = viewportWidth / VIRTUAL_WIDTH;
+
   const cssWidth = Math.max(1, Math.floor(VIRTUAL_WIDTH * scale));
   const cssHeight = Math.max(1, Math.floor(VIRTUAL_HEIGHT * scale));
+
   canvas.style.width = `${cssWidth}px`;
   canvas.style.height = `${cssHeight}px`;
+
+  // Set physical resolution based on DPR
+  canvas.width = cssWidth * dpr;
+  canvas.height = cssHeight * dpr;
+
+  // Scale context back to virtual units for existing drawing logic
+  ctx.scale(dpr * scale, dpr * scale);
+
+  // Re-disable smoothing after resize/scale
+  ctx.imageSmoothingEnabled = false;
 }
 
 export function render(characters: Character[]): void {

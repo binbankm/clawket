@@ -88,5 +88,10 @@
     "bridge:logs": "npm run --workspace @p697/clawket logs --",
     "bridge:doctor": "npm run --workspace @p697/clawket doctor --",
     "bridge:run": "npm run --workspace @p697/clawket run --"
+  },
+  "dependencies": {
+    "expo": "~55.0.9",
+    "react": "19.2.0",
+    "react-native": "0.83.4"
   }
 }

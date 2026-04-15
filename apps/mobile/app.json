@@ -14,7 +14,7 @@
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.p697.clawket",
+      "bundleIdentifier": "com.lbyan.clawket",
       "infoPlist": {
         "NSCameraUsageDescription": "Allow Clawket to use your camera to scan QR codes and take photos to send to AI.",
         "NSPhotoLibraryAddUsageDescription": "Allow Clawket to save stats posters to your photo library.",
