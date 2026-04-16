@@ -42,9 +42,10 @@ function modelMatchesQuery(model: ModelInfo, query: string): boolean {
 }
 
 export function resolveProviderModel(model: ModelInfo): string {
-  const modelRef = model.id.trim() || model.name;
-  if (modelRef.includes('/')) return modelRef;
-  const provider = model.provider.trim() || 'unknown';
+  const modelRef = (model.id.trim() || model.name || '').trim();
+  const provider = model.provider.trim();
+  if (!provider) return modelRef;
+  if (modelRef.startsWith(`${provider}/`)) return modelRef;
   return `${provider}/${modelRef}`;
 }
 

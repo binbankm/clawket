@@ -156,6 +156,7 @@ export function ModelsView({
 }: Props): React.JSX.Element {
   const { gatewayEpoch } = useAppContext();
   const { t } = useTranslation('console');
+  const { t: tCommon } = useTranslation('common');
   const { theme } = useAppTheme();
   const { isExpectedRestartActive } = useGatewayOverlay();
   const navigation = useNavigation();
@@ -267,7 +268,7 @@ export function ModelsView({
     Alert.alert(t('Discard changes?'), t('You have unsaved changes.'), [
       { text: t('Keep Editing'), style: 'cancel' },
       {
-        text: t('common:Cancel'),
+        text: tCommon('Cancel'),
         style: 'destructive',
         onPress: onDiscard,
       },
@@ -575,11 +576,11 @@ export function ModelsView({
     if (!selectedModel || !selectedModelState) return;
     if (!selectedModelState.editable) return;
     if (!configHash) {
-      Alert.alert(t('common:Error'), t('Model cost settings are unavailable. Please refresh and try again.'));
+      Alert.alert(tCommon('Error'), t('Model cost settings are unavailable. Please refresh and try again.'));
       return;
     }
     if (!selectedCostValue) {
-      Alert.alert(t('common:Error'), t('Enter valid non-negative numbers for all cost fields.'));
+      Alert.alert(tCommon('Error'), t('Enter valid non-negative numbers for all cost fields.'));
       return;
     }
     const patch = buildModelCostPatch({
@@ -590,7 +591,7 @@ export function ModelsView({
       cost: selectedCostValue,
     });
     if (!patch) {
-      Alert.alert(t('common:Error'), t('Unable to prepare model cost patch.'));
+      Alert.alert(tCommon('Error'), t('Unable to prepare model cost patch.'));
       return;
     }
 
@@ -689,7 +690,7 @@ export function ModelsView({
       modelId: selectedModel.id,
     });
     if (!configHash || !config) {
-      Alert.alert(t('common:Error'), t('Model cost settings are unavailable. Please refresh and try again.'));
+      Alert.alert(tCommon('Error'), t('Model cost settings are unavailable. Please refresh and try again.'));
       return;
     }
     if (!deleteState.canDelete) {
@@ -708,7 +709,7 @@ export function ModelsView({
       modelId: selectedModel.id,
     });
     if (!result.nextConfig) {
-      Alert.alert(t('common:Error'), t('Unable to prepare model deletion.'));
+      Alert.alert(tCommon('Error'), t('Unable to prepare model deletion.'));
       return;
     }
 
@@ -729,7 +730,7 @@ export function ModelsView({
               model: fullRef,
             })
           : t('This will remove the selected model from agents.defaults.models and restart Gateway. Continue?'),
-        confirmText: t('common:Remove'),
+        confirmText: tCommon('Remove'),
       },
       savingMessage: t('Deleting model...'),
       restartingMessage: t('Restarting Gateway to delete model...'),
@@ -749,7 +750,7 @@ export function ModelsView({
 
   const handleInlineAllowlistOnlyDelete = useCallback(async (model: Model) => {
     if (!configHash || !config) {
-      Alert.alert(t('common:Error'), t('Model cost settings are unavailable. Please refresh and try again.'));
+      Alert.alert(tCommon('Error'), t('Model cost settings are unavailable. Please refresh and try again.'));
       return;
     }
 
@@ -777,7 +778,7 @@ export function ModelsView({
       modelId: model.id,
     });
     if (!result.nextConfig) {
-      Alert.alert(t('common:Error'), t('Unable to prepare model deletion.'));
+      Alert.alert(tCommon('Error'), t('Unable to prepare model deletion.'));
       return;
     }
 
@@ -796,7 +797,7 @@ export function ModelsView({
       confirmation: {
         title: t('Delete Model'),
         message: t('This will remove the selected model from agents.defaults.models and restart Gateway. Continue?'),
-        confirmText: t('common:Remove'),
+        confirmText: tCommon('Remove'),
       },
       savingMessage: t('Deleting model...'),
       restartingMessage: t('Restarting Gateway to delete model...'),
@@ -823,18 +824,18 @@ export function ModelsView({
   const handleSaveModel = useCallback(async () => {
     if (!addModelProvider || !addModelDraft) return;
     if (!configHash) {
-      Alert.alert(t('common:Error'), t('Model cost settings are unavailable. Please refresh and try again.'));
+      Alert.alert(tCommon('Error'), t('Model cost settings are unavailable. Please refresh and try again.'));
       return;
     }
 
     const modelId = addModelDraft.modelId.trim();
     const modelName = addModelDraft.modelName.trim();
     if (!modelId || !modelName) {
-      Alert.alert(t('common:Error'), t('Model ID and name are required.'));
+      Alert.alert(tCommon('Error'), t('Model ID and name are required.'));
       return;
     }
     if (hasConfiguredModel(config, addModelProvider, modelId)) {
-      Alert.alert(t('common:Error'), t('This model already exists for {{provider}}.', { provider: addModelProvider }));
+      Alert.alert(tCommon('Error'), t('This model already exists for {{provider}}.', { provider: addModelProvider }));
       return;
     }
 
@@ -845,7 +846,7 @@ export function ModelsView({
       modelName,
     });
     if (!patch) {
-      Alert.alert(t('common:Error'), t('Unable to prepare model patch.'));
+      Alert.alert(tCommon('Error'), t('Unable to prepare model patch.'));
       return;
     }
 
@@ -888,11 +889,11 @@ export function ModelsView({
       setAddModelDraft(null);
       if (shouldShowAllowlistHint) {
         Alert.alert(
-          t('common:Saved'),
+          tCommon('Saved'),
           t('Model was added, but it is not visible in this list. Current allowlist settings may be filtering it out.'),
           [
             {
-              text: t('common:Close'),
+              text: tCommon('Close'),
               onPress: () => {
                 scheduleAutomaticAppReview('model_added');
               },
@@ -928,7 +929,7 @@ export function ModelsView({
 
   const handleSaveAllowlistChanges = useCallback(async () => {
     if (!configHash) {
-      Alert.alert(t('common:Error'), t('Model cost settings are unavailable. Please refresh and try again.'));
+      Alert.alert(tCommon('Error'), t('Model cost settings are unavailable. Please refresh and try again.'));
       return;
     }
 
@@ -953,8 +954,8 @@ export function ModelsView({
           ? t('This will create a new model allowlist from your pending selections and restart Gateway once. Models left off may disappear until you enable them again. Continue?')
           : t('This will apply your pending model changes and restart Gateway once. Continue?'),
       },
-      savingMessage: t('common:Saving settings...'),
-      restartingMessage: t('common:Restarting Gateway to apply changes...'),
+      savingMessage: tCommon('Saving settings...'),
+      restartingMessage: tCommon('Restarting Gateway to apply changes...'),
       onSuccess: async () => {
         setAllowlistDraftTouched(false);
         await loadModels('refresh');
@@ -1040,7 +1041,7 @@ export function ModelsView({
             <Text style={styles.modelName} numberOfLines={1}>{model.name}</Text>
             {isCopied ? (
               <View style={styles.copiedBadge}>
-                <Text style={styles.copiedBadgeText}>{t('common:Copied!')}</Text>
+                <Text style={styles.copiedBadgeText}>{tCommon('Copied!')}</Text>
               </View>
             ) : null}
           </View>
@@ -1059,7 +1060,7 @@ export function ModelsView({
             >
               <Trash2 size={14} color={theme.colors.error} strokeWidth={2} />
               <Text style={styles.inlineDeleteButtonText}>
-                {inlineDeleting ? t('common:Deleting...') : t('common:Delete')}
+                {inlineDeleting ? tCommon('Deleting...') : tCommon('Delete')}
               </Text>
             </Pressable>
           ) : (
@@ -1185,7 +1186,7 @@ export function ModelsView({
           disabled={disabled || !isDirty}
         >
           <Text style={styles.configPrimaryButtonText}>
-            {modelConfig.savingSettings ? t('common:Saving...') : t('common:Save')}
+            {modelConfig.savingSettings ? tCommon('Saving...') : tCommon('Save')}
           </Text>
         </Pressable>
       </ScrollView>
@@ -1313,7 +1314,7 @@ export function ModelsView({
               activeOpacity={0.7}
               disabled={savingAllowlistChanges}
             >
-              <Text style={styles.pendingCancelLabel}>{t('common:Cancel')}</Text>
+              <Text style={styles.pendingCancelLabel}>{tCommon('Cancel')}</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.pendingSaveButton, savingAllowlistChanges && styles.pendingSaveButtonDisabled]}
@@ -1322,7 +1323,7 @@ export function ModelsView({
               disabled={savingAllowlistChanges}
             >
               <Text style={styles.pendingSaveLabel}>
-                {savingAllowlistChanges ? t('common:Saving...') : t('Save ({{count}})', { count: pendingAllowlistChanges.length })}
+                {savingAllowlistChanges ? tCommon('Saving...') : t('Save ({{count}})', { count: pendingAllowlistChanges.length })}
               </Text>
             </TouchableOpacity>
           </View>
@@ -1334,7 +1335,7 @@ export function ModelsView({
           <ModelPickerModal
             visible={modelPickerVisible}
             onClose={() => setModelPickerVisible(false)}
-            title={modelPickerTarget === 'primary' ? t('Default Model') : t('common:Add')}
+            title={modelPickerTarget === 'primary' ? t('Default Model') : tCommon('Add')}
             models={modelPickerModels}
             loading={modelConfig.loadingSettings}
             error={modelConfig.settingsError}
