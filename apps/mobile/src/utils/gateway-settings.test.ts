@@ -195,6 +195,78 @@ describe('buildGatewayRuntimePatch', () => {
       },
     });
   });
+
+  it('clears fallbacks when fallbackModels is empty but primary model exists', () => {
+    expect(
+      buildGatewayRuntimePatch({
+        heartbeatEvery: '',
+        heartbeatActiveStart: '',
+        heartbeatActiveEnd: '',
+        heartbeatActiveTimezone: '',
+        heartbeatSession: '',
+        heartbeatModel: '',
+        defaultModel: 'openai/gpt-4.1',
+        fallbackModels: [],
+        thinkingDefault: '',
+      }),
+    ).toEqual({
+      agents: {
+        defaults: {
+          heartbeat: {
+            every: null,
+            session: null,
+            model: null,
+            activeHours: null,
+          },
+          thinkingDefault: null,
+          model: {
+            primary: 'openai/gpt-4.1',
+            fallbacks: null,
+          },
+          models: {
+            'openai/gpt-4.1': {},
+          },
+        },
+      },
+    });
+  });
+
+  it('updates fallbacks correctly when removing one from multiple fallbacks', () => {
+    expect(
+      buildGatewayRuntimePatch({
+        heartbeatEvery: '',
+        heartbeatActiveStart: '',
+        heartbeatActiveEnd: '',
+        heartbeatActiveTimezone: '',
+        heartbeatSession: '',
+        heartbeatModel: '',
+        defaultModel: 'openai/gpt-4.1',
+        fallbackModels: ['anthropic/claude-3-5-haiku', 'openai/gpt-4.1-mini'],
+        thinkingDefault: '',
+      }),
+    ).toEqual({
+      agents: {
+        defaults: {
+          heartbeat: {
+            every: null,
+            session: null,
+            model: null,
+            activeHours: null,
+          },
+          thinkingDefault: null,
+          model: {
+            primary: 'openai/gpt-4.1',
+            fallbacks: ['anthropic/claude-3-5-haiku', 'openai/gpt-4.1-mini'],
+          },
+          models: {
+            'openai/gpt-4.1': {},
+            'anthropic/claude-3-5-haiku': {},
+            'openai/gpt-4.1-mini': {},
+          },
+        },
+      },
+    });
+  });
 });
 
 describe('parseDmScope', () => {

@@ -139,11 +139,12 @@ const ChatDrawerContent = React.memo(function ChatDrawerContent({
 
   const handleResetSession = React.useCallback(async (session: import('../../types').SessionInfo) => {
     await resetGatewaySession(gateway, session.key);
+    await ChatCacheService.deleteMessages(gatewayConfigId, currentAgentId, session.key);
     if (controller.sessionKey === session.key) {
       controller.reloadSession(session, { clearInput: false, clearWhenEmpty: true });
     }
     await controller.refreshSessions();
-  }, [controller, gateway]);
+  }, [controller, currentAgentId, gateway, gatewayConfigId]);
 
   const handleDeleteSession = React.useCallback(async (session: import('../../types').SessionInfo) => {
     await deleteGatewaySession(gateway, session.key);

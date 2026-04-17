@@ -79,7 +79,7 @@ export function buildGatewayRuntimePatch(input: GatewayRuntimeSettings): Record<
   if (defaultModel) {
     defaultsPatch.model = {
       primary: defaultModel,
-      ...(fallbackModels.length > 0 ? { fallbacks: fallbackModels } : {}),
+      fallbacks: fallbackModels.length > 0 ? fallbackModels : null,
     };
     defaultsPatch.models = {
       [defaultModel]: {},
