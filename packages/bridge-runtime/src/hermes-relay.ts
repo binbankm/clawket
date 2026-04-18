@@ -5,6 +5,15 @@ const RELAY_CONTROL_PREFIX = '__clawket_relay_control__:';
 const BRIDGE_HEALTH_METHOD = 'health';
 const BRIDGE_HEALTH_PARAMS = {};
 const DEFAULT_BRIDGE_HEALTH_PROBE_TIMEOUT_MS = 10_000;
+const TRACEABLE_RELAY_METHODS = new Set([
+  'sessions.list',
+  'chat.history',
+  'last-heartbeat',
+  'model.current',
+  'models.list',
+  'agent.identity.get',
+  'agents.list',
+]);
 
 export type HermesRelayRuntimeSnapshot = {
   running: boolean;
@@ -44,6 +53,7 @@ export class HermesRelayRuntime {
   private bridgeStatusProbeInFlight = false;
   private readonly pendingBridgeMessages: Array<{ text?: string; data?: Buffer }> = [];
   private bridgeHealthProbeSeq = 0;
+  private relayMessageSeq = 0;
   private pendingBridgeHealthProbe:
     | {
       id: string;
@@ -213,6 +223,7 @@ export class HermesRelayRuntime {
     }
     const text = normalizeText(data);
     if (text == null) return;
+    this.traceRelayFrame('relay_in', text);
     if (text.startsWith(RELAY_CONTROL_PREFIX)) {
       this.handleRelayControl(text);
       return;
@@ -249,6 +260,7 @@ export class HermesRelayRuntime {
     }
     const text = normalizeText(data);
     if (text == null) return;
+    this.traceRelayFrame('bridge_in', text);
     if (this.handleBridgeHealthProbeResponse(text)) {
       return;
     }
@@ -259,6 +271,9 @@ export class HermesRelayRuntime {
   private forwardOrQueueBridgeMessage(message: { text?: string; data?: Buffer }): void {
     const bridge = this.bridgeSocket;
     if (!bridge || bridge.readyState !== WebSocket.OPEN) {
+      if (message.text !== undefined) {
+        this.traceRelayFrame('bridge_queue', message.text);
+      }
       if (this.pendingBridgeMessages.length < 256) {
         this.pendingBridgeMessages.push(message);
       }
@@ -266,6 +281,7 @@ export class HermesRelayRuntime {
       return;
     }
     if (message.text !== undefined) {
+      this.traceRelayFrame('bridge_send', message.text);
       bridge.send(message.text);
       return;
     }
@@ -281,10 +297,43 @@ export class HermesRelayRuntime {
       const next = this.pendingBridgeMessages.shift();
       if (!next) break;
       if (next.text !== undefined) {
+        this.traceRelayFrame('bridge_flush', next.text);
         bridge.send(next.text);
       } else if (next.data) {
         bridge.send(next.data);
       }
+    }
+  }
+
+  private traceRelayFrame(direction: 'relay_in' | 'bridge_send' | 'bridge_queue' | 'bridge_flush' | 'bridge_in', text: string): void {
+    const details = this.describeRelayFrame(text);
+    if (!details) return;
+    this.log(`[trace] ${direction} seq=${++this.relayMessageSeq} ${details}`);
+  }
+
+  private describeRelayFrame(text: string): string | null {
+    if (text.startsWith(RELAY_CONTROL_PREFIX)) {
+      try {
+        const parsed = JSON.parse(text.slice(RELAY_CONTROL_PREFIX.length)) as { event?: unknown; type?: unknown };
+        const event = typeof parsed?.event === 'string' ? parsed.event : 'unknown';
+        return `controlEvent=${event}`;
+      } catch {
+        return 'controlEvent=invalid';
+      }
+    }
+
+    try {
+      const parsed = JSON.parse(text) as { type?: unknown; id?: unknown; method?: unknown; ok?: unknown };
+      if (parsed?.type === 'req' && typeof parsed.method === 'string') {
+        if (!TRACEABLE_RELAY_METHODS.has(parsed.method)) return null;
+        return `frame=req id=${String(parsed.id ?? '')} method=${parsed.method}`;
+      }
+      if (parsed?.type === 'res' && typeof parsed.id === 'string') {
+        return `frame=res id=${parsed.id} ok=${parsed.ok === true ? 'true' : 'false'}`;
+      }
+      return null;
+    } catch {
+      return null;
     }
   }
 

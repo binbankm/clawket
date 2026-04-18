@@ -24,7 +24,9 @@ import { useFocusEffect, useIsFocused, useNavigation } from '@react-navigation/n
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { AppWindow, ChevronLeft, ChevronRight, Cloud, Eye, Gamepad2, Github, HelpCircle, Mic, Palette, Share2, ShieldCheck, Link2, Mail, MessageCircleMore, Minus, Plus, ScanLine, Sparkles, Star, ImageUp } from 'lucide-react-native';
 import { ConnectionHelpQuick, ConnectionHelpManual } from '../../components/config/ConnectionHelpSection';
+import { QuickConnectionPanel } from '../../components/config/QuickConnectionPanel';
 import { SwipeableGatewayRow, SwipeableMethods } from '../../components/config/SwipeableGatewayRow';
+import { YouMindSignInPanel } from '../../components/youmind/YouMindSignInPanel';
 import { IconButton, ModalSheet, SegmentedTabs, ThemedSwitch } from '../../components/ui';
 import { useProPaywall } from '../../contexts/ProPaywallContext';
 import { analyticsEvents } from '../../services/analytics/events';
@@ -32,10 +34,11 @@ import { getPostHogDiagnostics, type PostHogDiagnostics } from '../../services/a
 import {
   collectRevenueCatDiagnostics,
   getRevenueCatRuntimeDiagnostics,
-  hasLifetimeProAccessFromSnapshot,
+  shouldShowLifetimeUpgradeAnnouncementForSnapshot,
   type RevenueCatDiagnostics,
 } from '../../services/pro-subscription';
 import { StorageService } from '../../services/storage';
+import { YouMindClient } from '../../services/youmind';
 import { AppTheme, builtInAccents, BuiltInAccentColorId } from '../../theme';
 import { FontSize, FontWeight, Radius, Shadow, Space } from '../../theme/tokens';
 import { GatewayBackendKind, GatewayMode, GatewayTransportKind, SpeechRecognitionLanguage, ThemeMode } from '../../types';
@@ -46,7 +49,7 @@ import { APP_PACKAGE_VERSION } from '../../constants/app-version';
 import { CLAWKET_GITHUB_REPO_URL } from '../../config/app-links';
 import { buildSupportEmailUrl, publicAppLinks } from '../../config/public';
 import { AppIconVariant, getCurrentAppIconAsync, isAppIconChangeSupportedAsync, setCurrentAppIconAsync } from '../../services/app-icon';
-import { getGatewayBackendCapabilities, getGatewayModeLabel, selectByBackend } from '../../services/gateway-backends';
+import { getGatewayBackendCapabilities, getGatewayModeLabel, resolveGatewayBackendKind } from '../../services/gateway-backends';
 import { saveBundledImageToPhotoLibrary } from '../../services/photo-library';
 import { useConfigScreenController } from './hooks/useConfigScreenController';
 import type { ConfigStackParamList } from './ConfigTab';
@@ -97,16 +100,7 @@ function getBackendLabels(t: (key: string) => string): Record<GatewayBackendKind
   return {
     openclaw: t('OpenClaw'),
     hermes: t('Hermes'),
-  };
-}
-
-function getTransportLabels(t: (key: string) => string): Record<GatewayTransportKind, string> {
-  return {
-    relay: t('Remote'),
-    local: t('Local'),
-    tailscale: t('Tailscale'),
-    cloudflare: t('Cloudflare Tunnel'),
-    custom: t('common:Custom'),
+    youmind: t('YouMind'),
   };
 }
 
@@ -114,6 +108,9 @@ function getUrlPlaceholder(input: {
   backendKind: GatewayBackendKind;
   transportKind: GatewayTransportKind;
 }): string {
+  if (input.backendKind === 'youmind') {
+    return 'https://youmind.com';
+  }
   if (input.backendKind === 'hermes') {
     switch (input.transportKind) {
       case 'local':
@@ -279,7 +276,7 @@ export function ConfigScreenLayout({ insets, tabBarHeight, controller }: Props):
   useEffect(() => {
     if (debugOverrideEnabled) return;
     if (!isFocused || lifetimeUpgradeAnnouncementHandled || lifetimeUpgradeAnnouncementVisible) return;
-    if (!hasLifetimeProAccessFromSnapshot(snapshot)) return;
+    if (!shouldShowLifetimeUpgradeAnnouncementForSnapshot(snapshot)) return;
 
     let cancelled = false;
 
@@ -1229,7 +1226,7 @@ export function ConfigScreenLayout({ insets, tabBarHeight, controller }: Props):
       >
         <View style={styles.lifetimeUpgradeAnnouncementBody}>
           <Text style={styles.lifetimeUpgradeAnnouncementText}>
-            {t('Thanks for supporting Clawket. To thank our early supporters, everyone who purchased an annual membership before April 12 has been automatically upgraded to lifetime membership.')}
+            {t('Thanks for supporting Clawket. To thank our early supporters, everyone who purchased an annual membership before April 18 has been automatically upgraded to lifetime membership.')}
           </Text>
           <Pressable
             onPress={handleLifetimeUpgradeAnnouncementClose}
@@ -1321,11 +1318,21 @@ type EditorModalProps = {
   styles: ReturnType<typeof createStyles>;
 };
 
+function buildYouMindConnectionDisplayName(user: { email?: string | null; name?: string | null } | null | undefined): string {
+  const email = user?.email?.trim();
+  if (email) return `YouMind (${email})`;
+  const name = user?.name?.trim();
+  if (name) return `YouMind (${name})`;
+  return 'YouMind';
+}
+
 function EditorModal({ controller, theme, styles }: EditorModalProps): React.JSX.Element {
-  const { t } = useTranslation('config');
+  const { t } = useTranslation(['config', 'chat', 'common']);
   const isEditing = !!controller.editingConfigId;
   const isLockedRelayEditor = isEditing && controller.isRelayEditorLocked;
   const [editorTab, setEditorTab] = useState<EditorTab>(isEditing ? 'manual' : 'quick');
+  const [quickPage, setQuickPage] = useState<'quick' | 'localQuickConnect' | 'youmindSignIn'>('quick');
+  const [draftYouMindConfigId, setDraftYouMindConfigId] = useState<string | null>(null);
   const EDITOR_TABS = useMemo<{ key: EditorTab; label: string }[]>(() => [
     { key: 'quick', label: t('Quick Connect') },
     { key: 'manual', label: t('Custom Connect') },
@@ -1335,13 +1342,11 @@ function EditorModal({ controller, theme, styles }: EditorModalProps): React.JSX
     { key: 'password', label: t('Password') },
   ], [t]);
   const BACKEND_LABELS = useMemo(() => getBackendLabels(t), [t]);
-  const TRANSPORT_LABELS = useMemo(() => getTransportLabels(t), [t]);
-  const transportOptions = useMemo<GatewayTransportKind[]>(
-    () => selectByBackend<GatewayTransportKind[]>(controller.editorBackendKind, {
-      openclaw: ['relay', 'local', 'tailscale', 'cloudflare', 'custom'],
-      hermes: ['local', 'tailscale', 'cloudflare', 'custom'],
-    }),
-    [controller.editorBackendKind],
+  const manualBackendOptions = useMemo(
+    () => ((isEditing && controller.editorBackendKind === 'youmind')
+      ? (['youmind'] as const)
+      : (['openclaw', 'hermes'] as const)),
+    [controller.editorBackendKind, isEditing],
   );
   const authInputLabel = controller.editorAuthMethod === 'token' ? t('Auth Token') : t('Password');
   const authInputPlaceholder = controller.editorAuthMethod === 'token'
@@ -1350,72 +1355,166 @@ function EditorModal({ controller, theme, styles }: EditorModalProps): React.JSX
   const authInputValue = controller.editorAuthMethod === 'token'
     ? controller.editorToken
     : controller.editorPassword;
+  const activeYouMindScopeKey = draftYouMindConfigId;
+  const activeYouMindClient = useMemo(
+    () => activeYouMindScopeKey
+      ? new YouMindClient('https://youmind.com', { authScopeKey: activeYouMindScopeKey })
+      : null,
+    [activeYouMindScopeKey],
+  );
+
+  const resetYouMindAuthFlow = useCallback(() => {
+    setDraftYouMindConfigId(null);
+  }, []);
+
+  const closeEditorModal = useCallback((options?: { preserveDraftScope?: boolean }) => {
+    const pendingDraftId = options?.preserveDraftScope ? null : draftYouMindConfigId;
+    resetYouMindAuthFlow();
+    setQuickPage('quick');
+    controller.closeEditor();
+    if (pendingDraftId && !controller.configs.some((item) => item.id === pendingDraftId)) {
+      void StorageService.clearYouMindAuthSession('https://youmind.com', pendingDraftId);
+      void StorageService.setYouMindLastOpenedBoardId('https://youmind.com', null, pendingDraftId);
+    }
+  }, [controller, draftYouMindConfigId, resetYouMindAuthFlow]);
+
+  const beginYouMindSignIn = useCallback(() => {
+    setDraftYouMindConfigId(`gateway_${Date.now()}`);
+    setQuickPage('youmindSignIn');
+  }, []);
 
   // Reset to Quick Connect tab when modal opens for a new connection
   const prevVisibleRef = useRef(controller.editorVisible);
-  if (controller.editorVisible && !prevVisibleRef.current) {
-    // Modal just opened — pick initial tab
-    if (!isEditing && editorTab !== controller.editorPreferredTab) setEditorTab(controller.editorPreferredTab);
-    if (isEditing && editorTab !== 'manual') setEditorTab('manual');
-  }
+    if (controller.editorVisible && !prevVisibleRef.current) {
+      // Modal just opened — pick initial tab
+      if (!isEditing && editorTab !== controller.editorPreferredTab) setEditorTab(controller.editorPreferredTab);
+      if (isEditing && editorTab !== 'manual') setEditorTab('manual');
+      if (!isEditing && controller.editorPreferredTab === 'quick') {
+        resetYouMindAuthFlow();
+        if (controller.editorQuickStart === 'youmind') {
+          beginYouMindSignIn();
+        } else if (controller.editorQuickStart === 'local') {
+          setQuickPage('localQuickConnect');
+        } else {
+          setQuickPage('quick');
+        }
+      }
+    }
   prevVisibleRef.current = controller.editorVisible;
+
+  const finishYouMindSignIn = useCallback(async (user?: { email?: string | null; name?: string | null } | null) => {
+    const resolvedName = buildYouMindConnectionDisplayName(user);
+    if (draftYouMindConfigId) {
+      await controller.createYouMindConfig({
+        id: draftYouMindConfigId,
+        name: resolvedName,
+        activate: true,
+        url: 'https://youmind.com',
+      });
+    }
+    closeEditorModal({ preserveDraftScope: true });
+  }, [closeEditorModal, controller, draftYouMindConfigId]);
 
   return (
     <ModalSheet
       visible={controller.editorVisible}
-      onClose={controller.closeEditor}
-      title={isEditing ? t('Edit Connection') : t('Add Connection')}
+      onClose={closeEditorModal}
+      title={isEditing
+        ? t('Edit Connection')
+        : quickPage === 'localQuickConnect'
+            ? t('Quick Connect')
+        : quickPage === 'youmindSignIn'
+            ? t('Sign in to YouMind')
+            : t('Add Connection')}
     >
       {!isEditing && (
         <SegmentedTabs tabs={EDITOR_TABS} active={editorTab} onSwitch={setEditorTab} />
       )}
 
       {editorTab === 'quick' && !isEditing ? (
-        <ScrollView contentContainerStyle={styles.modalBody}>
-          <Text style={styles.quickHint}>
-            {t('Scan or upload a pairing QR code to connect instantly.')}
-          </Text>
+        quickPage === 'youmindSignIn' ? (
+          <ScrollView contentContainerStyle={styles.modalBody}>
+            {activeYouMindClient ? (
+              <YouMindSignInPanel
+                client={activeYouMindClient}
+                source="modal"
+                backButtonVariant="configInline"
+                onBack={() => {
+                  resetYouMindAuthFlow();
+                  setQuickPage('quick');
+                }}
+                onSignedIn={async (session) => {
+                  await finishYouMindSignIn(session.user);
+                }}
+              />
+            ) : null}
+          </ScrollView>
+        ) : quickPage === 'localQuickConnect' ? (
+          <ScrollView contentContainerStyle={styles.modalBody}>
+            <Pressable
+              onPress={() => {
+                setQuickPage('quick');
+              }}
+              style={({ pressed }) => [styles.inlineBackButton, pressed && styles.inlineBackButtonPressed]}
+            >
+              <Text style={styles.inlineBackButtonText}>{t('Back', { ns: 'chat' })}</Text>
+            </Pressable>
 
-          <Pressable
-            onPress={() => {
-              if (!isMacCatalyst) {
-                analyticsEvents.gatewayScanQrTapped({ source: 'config_quick_connect' });
-                controller.onScanQR();
+            <ConnectionHelpQuick />
+
+            <View style={styles.quickActionsWrap}>
+              <Pressable
+                onPress={() => {
+                  if (!isMacCatalyst) {
+                    analyticsEvents.gatewayScanQrTapped({ source: 'config_quick_connect' });
+                    controller.onScanQR();
+                    return;
+                  }
+                  controller.onUploadQR();
+                }}
+                style={({ pressed }) => [styles.primaryButton, styles.quickAction, pressed && styles.primaryButtonPressed]}
+              >
+                <View style={styles.buttonContent}>
+                  {isMacCatalyst
+                    ? <ImageUp size={15} color={theme.colors.primaryText} strokeWidth={2} />
+                    : <ScanLine size={15} color={theme.colors.primaryText} strokeWidth={2} />}
+                  <Text style={styles.primaryButtonText}>{t(isMacCatalyst ? 'Upload QR Image' : 'Scan QR Code')}</Text>
+                </View>
+              </Pressable>
+
+              {!isMacCatalyst && (
+                <Pressable
+                  onPress={controller.onUploadQR}
+                  style={({ pressed }) => [styles.outlineButton, styles.quickAction, pressed && styles.outlineButtonPressed]}
+                >
+                  <View style={styles.buttonContent}>
+                    <ImageUp size={15} color={theme.colors.primary} strokeWidth={2} />
+                    <Text style={styles.outlineButtonText}>{t('Upload QR Image')}</Text>
+                  </View>
+                </Pressable>
+              )}
+            </View>
+          </ScrollView>
+        ) : (
+        <ScrollView contentContainerStyle={styles.modalBody}>
+          <QuickConnectionPanel
+            onSelectTarget={(target) => {
+              if (target === 'local') {
+                setQuickPage('localQuickConnect');
                 return;
               }
-              controller.onUploadQR();
+              beginYouMindSignIn();
             }}
-            style={({ pressed }) => [styles.primaryButton, styles.quickAction, pressed && styles.primaryButtonPressed]}
-          >
-            <View style={styles.buttonContent}>
-              {isMacCatalyst
-                ? <ImageUp size={15} color={theme.colors.primaryText} strokeWidth={2} />
-                : <ScanLine size={15} color={theme.colors.primaryText} strokeWidth={2} />}
-              <Text style={styles.primaryButtonText}>{t(isMacCatalyst ? 'Upload QR Image' : 'Scan QR Code')}</Text>
-            </View>
-          </Pressable>
-
-          {!isMacCatalyst && (
-            <Pressable
-              onPress={controller.onUploadQR}
-              style={({ pressed }) => [styles.outlineButton, styles.quickAction, pressed && styles.outlineButtonPressed]}
-            >
-              <View style={styles.buttonContent}>
-                <ImageUp size={15} color={theme.colors.primary} strokeWidth={2} />
-                <Text style={styles.outlineButtonText}>{t('Upload QR Image')}</Text>
-              </View>
-            </Pressable>
-          )}
-
-          <ConnectionHelpQuick />
+          />
         </ScrollView>
+        )
       ) : (
         <ScrollView contentContainerStyle={styles.modalBody}>
           {!isLockedRelayEditor && (
             <View style={styles.fieldWrap}>
               <Text style={styles.inputLabel}>{t('Backend')}</Text>
               <View style={styles.segmentedWrap}>
-                {(['openclaw', 'hermes'] as const).map((backendKind) => (
+                {manualBackendOptions.map((backendKind) => (
                   <Pressable
                     key={backendKind}
                     style={[styles.segment, controller.editorBackendKind === backendKind && styles.segmentActive]}
@@ -1423,25 +1522,6 @@ function EditorModal({ controller, theme, styles }: EditorModalProps): React.JSX
                   >
                     <Text style={[styles.segmentText, controller.editorBackendKind === backendKind && styles.segmentTextActive]}>
                       {BACKEND_LABELS[backendKind]}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
-            </View>
-          )}
-
-          {!isLockedRelayEditor && (
-            <View style={styles.fieldWrap}>
-              <Text style={styles.inputLabel}>{t('Transport')}</Text>
-              <View style={styles.segmentedWrap}>
-                {transportOptions.map((transportKind) => (
-                  <Pressable
-                    key={transportKind}
-                    style={[styles.segment, controller.editorTransportKind === transportKind && styles.segmentActive]}
-                    onPress={() => controller.setEditorTransportKind(transportKind)}
-                  >
-                    <Text style={[styles.segmentText, controller.editorTransportKind === transportKind && styles.segmentTextActive]}>
-                      {TRANSPORT_LABELS[transportKind]}
                     </Text>
                   </Pressable>
                 ))}
@@ -1458,7 +1538,7 @@ function EditorModal({ controller, theme, styles }: EditorModalProps): React.JSX
                   autoCorrect={false}
                   placeholder={getUrlPlaceholder({
                     backendKind: controller.editorBackendKind,
-                    transportKind: controller.editorTransportKind,
+                    transportKind: 'custom',
                   })}
                   placeholderTextColor={theme.colors.textSubtle}
                   style={styles.input}
@@ -1466,6 +1546,12 @@ function EditorModal({ controller, theme, styles }: EditorModalProps): React.JSX
                   onChangeText={controller.setEditorUrl}
                 />
               </View>
+
+              {controller.editorBackendKind === 'youmind' ? (
+                <View style={styles.fieldWrap}>
+                  <Text style={styles.inputHelp}>{t('YouMind sign-in happens inside Chat after you save this connection.')}</Text>
+                </View>
+              ) : null}
 
               {controller.editorRequiresDirectAuth ? (
                 <>
@@ -1968,6 +2054,20 @@ function createStyles(colors: Colors) {
     quickAction: {
       marginTop: 0,
       marginBottom: Space.sm,
+    },
+    quickActionsWrap: {},
+    inlineBackButton: {
+      alignSelf: 'flex-start',
+      marginBottom: Space.xs,
+      paddingVertical: Space.xs,
+    },
+    inlineBackButtonPressed: {
+      opacity: 0.72,
+    },
+    inlineBackButtonText: {
+      color: colors.primary,
+      fontSize: FontSize.base,
+      fontWeight: FontWeight.medium,
     },
     saveButton: {
       marginTop: Space.xs,

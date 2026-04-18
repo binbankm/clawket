@@ -1,8 +1,11 @@
 import React from 'react';
+import { View } from 'react-native';
 import { ApprovalCard } from '../../../components/chat/ApprovalCard';
 import { ToolCard } from '../../../components/chat/ToolCard';
+import { AGENT_AVATAR_SLOT_WIDTH } from '../../../components/chat/messageLayout';
 import { MessageBubble, MessageSelectionFrames } from '../../../components/MessageBubble';
-import { UiMessage } from '../../../types/chat';
+import { ToolPresentation, UiMessage } from '../../../types/chat';
+import { Space } from '../../../theme/tokens';
 
 type Options = {
   forceSelected?: boolean;
@@ -25,6 +28,35 @@ type Params = {
   showAgentAvatar: boolean;
   showModelUsage: boolean;
 };
+
+function renderToolPresentation(
+  item: UiMessage,
+  presentation: ToolPresentation,
+  chatFontSize: number,
+  onImagePreview: (uris: string[], index: number) => void,
+  reserveAvatarSlot: boolean,
+  overlayMode: boolean,
+): React.ReactElement | null {
+  if (presentation.kind === 'image-gallery') {
+    return (
+      <View style={reserveAvatarSlot ? { paddingLeft: AGENT_AVATAR_SLOT_WIDTH } : undefined}>
+        <MessageBubble
+          messageId={`${item.id}:presentation:image-gallery`}
+          role="assistant"
+          text=""
+          timestampMs={item.timestampMs}
+          imageUris={presentation.imageUris}
+          onImagePress={overlayMode ? undefined : onImagePreview}
+          overlayMode={overlayMode}
+          reserveAvatarSlot={false}
+          chatFontSize={chatFontSize}
+        />
+      </View>
+    );
+  }
+
+  return null;
+}
 
 export function renderChatMessageBubble({
   agentDisplayName,
@@ -60,19 +92,34 @@ export function renderChatMessageBubble({
   }
 
   if (item.role === 'tool') {
+    const toolPresentation = item.toolPresentation ?? [];
     return (
-      <ToolCard
-        name={item.toolName ?? 'tool'}
-        status={item.toolStatus ?? 'success'}
-        summary={item.toolSummary ?? item.toolName ?? 'tool'}
-        args={item.toolArgs}
-        detail={item.toolDetail}
-        durationMs={item.toolDurationMs}
-        startedAtMs={item.toolStartedAt}
-        finishedAtMs={item.toolFinishedAt}
-        usage={item.usage}
-        reserveAvatarSlot={reserveAvatarSlot}
-      />
+      <View style={{ gap: Space.xs }}>
+        <ToolCard
+          name={item.toolName ?? 'tool'}
+          status={item.toolStatus ?? 'success'}
+          summary={item.toolSummary ?? item.toolName ?? 'tool'}
+          args={item.toolArgs}
+          detail={item.toolDetail}
+          durationMs={item.toolDurationMs}
+          startedAtMs={item.toolStartedAt}
+          finishedAtMs={item.toolFinishedAt}
+          usage={item.usage}
+          reserveAvatarSlot={reserveAvatarSlot}
+        />
+        {toolPresentation.map((presentation, index) => (
+          <React.Fragment key={`${item.id}:tool-presentation:${index}`}>
+            {renderToolPresentation(
+              item,
+              presentation,
+              chatFontSize,
+              onImagePreview,
+              reserveAvatarSlot,
+              !!options?.overlayMode,
+            )}
+          </React.Fragment>
+        ))}
+      </View>
     );
   }
 
@@ -81,6 +128,7 @@ export function renderChatMessageBubble({
       messageId={item.id}
       role={item.role}
       text={item.text}
+      userSkill={item.role === 'user' ? item.userSkill : undefined}
       timestampMs={item.timestampMs}
       streaming={item.streaming}
       imageUris={item.imageUris}

@@ -3,7 +3,7 @@ import { useIsFocused } from '@react-navigation/native';
 import { analyticsEvents } from '../../../services/analytics/events';
 import { useAppContext } from '../../../contexts/AppContext';
 import type { GatewayModelProviderInfo } from '../../../services/gateway-backend-operations';
-import { ConnectionState, SessionInfo } from '../../../types';
+import { ConnectionState, GatewayBackendKind, SessionInfo } from '../../../types';
 
 export type ModelInfo = {
   id: string;
@@ -47,7 +47,7 @@ type Props = {
       scope?: 'global' | 'session';
       sessionKey?: string | null;
     }) => Promise<ModelSelectionState>;
-    getBackendKind: () => 'openclaw' | 'hermes';
+    getBackendKind: () => GatewayBackendKind;
   };
   sessionKey: string | null;
   setInput: (value: string) => void;

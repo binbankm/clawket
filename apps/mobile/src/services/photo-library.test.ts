@@ -6,6 +6,7 @@ jest.mock('expo-asset', () => ({
 
 const deleteMock = jest.fn();
 const copyMock = jest.fn();
+const downloadFileAsyncMock = jest.fn();
 
 jest.mock('expo-file-system', () => {
   class MockFile {
@@ -24,6 +25,8 @@ jest.mock('expo-file-system', () => {
     delete = deleteMock;
   }
 
+  (MockFile as unknown as { downloadFileAsync: jest.Mock }).downloadFileAsync = downloadFileAsyncMock;
+
   return {
     File: MockFile,
     Paths: {
@@ -36,7 +39,9 @@ import { Asset } from 'expo-asset';
 import * as MediaLibrary from 'expo-media-library';
 import {
   saveBundledImageToPhotoLibrary,
+  saveImageUriToPhotoLibrary,
   type SaveBundledImageToPhotoLibraryResult,
+  type SaveImageUriToPhotoLibraryResult,
 } from './photo-library';
 
 describe('saveBundledImageToPhotoLibrary', () => {
@@ -90,5 +95,40 @@ describe('saveBundledImageToPhotoLibrary', () => {
     await expect(
       saveBundledImageToPhotoLibrary(123, 'wechat-group-qr'),
     ).rejects.toThrow('Bundled asset did not resolve to a local file URI.');
+  });
+
+  it('downloads a remote image url and saves it to the photo library', async () => {
+    const requestPermissionsAsync = MediaLibrary.requestPermissionsAsync as jest.Mock;
+    const saveToLibraryAsync = MediaLibrary.saveToLibraryAsync as jest.Mock;
+    requestPermissionsAsync.mockResolvedValueOnce({ granted: true });
+    downloadFileAsyncMock.mockResolvedValueOnce({ uri: 'file:///cache/chat-image-1.webp' });
+
+    const result = await saveImageUriToPhotoLibrary(
+      'https://cdn.example.com/path/generated.webp?token=123',
+      'chat-image',
+    );
+
+    expect(result).toBe<SaveImageUriToPhotoLibraryResult>('saved');
+    expect(downloadFileAsyncMock).toHaveBeenCalledTimes(1);
+    expect(downloadFileAsyncMock.mock.calls[0][0]).toBe('https://cdn.example.com/path/generated.webp?token=123');
+    expect(String(downloadFileAsyncMock.mock.calls[0][1]?.uri ?? '')).toContain('chat-image-');
+    expect(String(downloadFileAsyncMock.mock.calls[0][1]?.uri ?? '')).toMatch(/\.webp$/);
+    expect(saveToLibraryAsync).toHaveBeenCalledWith(expect.stringContaining('chat-image-'));
+  });
+
+  it('copies a local image uri and saves it to the photo library', async () => {
+    const requestPermissionsAsync = MediaLibrary.requestPermissionsAsync as jest.Mock;
+    const saveToLibraryAsync = MediaLibrary.saveToLibraryAsync as jest.Mock;
+    requestPermissionsAsync.mockResolvedValueOnce({ granted: true });
+
+    const result = await saveImageUriToPhotoLibrary(
+      'file:///tmp/original.png',
+      'chat-image',
+    );
+
+    expect(result).toBe<SaveImageUriToPhotoLibraryResult>('saved');
+    expect(copyMock).toHaveBeenCalledTimes(1);
+    expect(downloadFileAsyncMock).not.toHaveBeenCalled();
+    expect(saveToLibraryAsync).toHaveBeenCalledWith(expect.stringContaining('chat-image-'));
   });
 });

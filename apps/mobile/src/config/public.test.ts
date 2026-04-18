@@ -3,6 +3,7 @@ import {
   resolvePublicAnalyticsConfig,
   resolvePublicAppLinks,
   resolvePublicRevenueCatConfig,
+  resolvePublicYouMindAuthConfig,
 } from './public';
 
 describe('resolvePublicAppLinks', () => {
@@ -99,5 +100,30 @@ describe('buildSupportEmailUrl', () => {
   it('builds a mailto link when an email is present', () => {
     expect(buildSupportEmailUrl('support@example.com')).toBe('mailto:support@example.com');
     expect(buildSupportEmailUrl(null)).toBeNull();
+  });
+});
+
+describe('resolvePublicYouMindAuthConfig', () => {
+  it('returns null for every field when no env overrides are provided', () => {
+    expect(resolvePublicYouMindAuthConfig({} as NodeJS.ProcessEnv)).toEqual({
+      googleIosClientId: null,
+      googleAndroidClientId: null,
+      googleWebClientId: null,
+      appSecret: null,
+    });
+  });
+
+  it('reads explicit Google client ids from env', () => {
+    expect(resolvePublicYouMindAuthConfig({
+      EXPO_PUBLIC_YOUMIND_GOOGLE_IOS_CLIENT_ID: 'ios-client-id',
+      EXPO_PUBLIC_YOUMIND_GOOGLE_ANDROID_CLIENT_ID: 'android-client-id',
+      EXPO_PUBLIC_YOUMIND_GOOGLE_WEB_CLIENT_ID: 'web-client-id',
+      EXPO_PUBLIC_YOUMIND_APP_SECRET: 'app-secret',
+    } as unknown as NodeJS.ProcessEnv)).toEqual({
+      googleIosClientId: 'ios-client-id',
+      googleAndroidClientId: 'android-client-id',
+      googleWebClientId: 'web-client-id',
+      appSecret: 'app-secret',
+    });
   });
 });

@@ -16,17 +16,37 @@ type Props = {
   data: BarDataPoint[];
   mode: 'tokens' | 'cost';
   height?: number;
+  width?: number;
 };
+
+function getDataSignature(data: BarDataPoint[]): string {
+  return data.map((item) => `${item.date}:${item.value}`).join('|');
+}
+
+function areBarDataEqual(left: BarDataPoint[], right: BarDataPoint[]): boolean {
+  if (left === right) return true;
+  if (left.length !== right.length) return false;
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index]?.date !== right[index]?.date || left[index]?.value !== right[index]?.value) {
+      return false;
+    }
+  }
+  return true;
+}
 
 const DEFAULT_HEIGHT = 180;
 const BAR_WIDTH = 28;
 const BAR_GAP = 8;
-const PADDING_LEFT = 48;
-const PADDING_RIGHT = 12;
+const PADDING_LEFT = 26;
+const PADDING_RIGHT = 0;
 const PADDING_TOP = 16;
 const PADDING_BOTTOM = 28;
 const ANIMATION_DURATION = 300;
 const FRAME_DROP_THRESHOLD = 32;
+const MIN_BAR_WIDTH = 14;
+const MAX_BAR_WIDTH = 28;
+const MIN_BAR_GAP = 6;
+const MAX_BAR_GAP = 24;
 
 const MemoBar = React.memo(function MemoBar({
   x,
@@ -61,7 +81,7 @@ const MemoBar = React.memo(function MemoBar({
   );
 });
 
-export function SvgBarChart({ data, mode, height = DEFAULT_HEIGHT }: Props): React.JSX.Element {
+function SvgBarChartComponent({ data, mode, height = DEFAULT_HEIGHT, width }: Props): React.JSX.Element {
   const { theme } = useAppTheme();
   const { t } = useTranslation('console');
   const [animProgress, setAnimProgress] = useState(0);
@@ -69,14 +89,47 @@ export function SvgBarChart({ data, mode, height = DEFAULT_HEIGHT }: Props): Rea
   const rafRef = useRef<number | null>(null);
   const startTimeRef = useRef<number>(0);
 
+  const dataSignature = useMemo(() => getDataSignature(data), [data]);
   const values = useMemo(() => data.map((d) => d.value), [data]);
   const { max, ticks } = useMemo(() => computeYScale(values, height), [values, height]);
 
-  const chartWidth = Math.max(
+  const naturalChartWidth = Math.max(
     PADDING_LEFT + data.length * (BAR_WIDTH + BAR_GAP) + PADDING_RIGHT,
     PADDING_LEFT + PADDING_RIGHT + 100,
   );
+  const chartWidth = Math.max(width ?? naturalChartWidth, PADDING_LEFT + PADDING_RIGHT + 100);
   const chartAreaHeight = height - PADDING_TOP - PADDING_BOTTOM;
+  const availableBarsWidth = Math.max(1, chartWidth - PADDING_LEFT - PADDING_RIGHT);
+  const desiredGap = Math.max(
+    MIN_BAR_GAP,
+    Math.min(MAX_BAR_GAP, availableBarsWidth * 0.04),
+  );
+  const computedLayout = (() => {
+    if (data.length <= 1) {
+      return {
+        barWidth: Math.min(MAX_BAR_WIDTH, availableBarsWidth),
+        gap: 0,
+      };
+    }
+
+    let gap = desiredGap;
+    let barWidth = (availableBarsWidth - gap * (data.length - 1)) / data.length;
+
+    if (barWidth > MAX_BAR_WIDTH) {
+      barWidth = MAX_BAR_WIDTH;
+      gap = (availableBarsWidth - barWidth * data.length) / (data.length - 1);
+    } else if (barWidth < MIN_BAR_WIDTH) {
+      barWidth = MIN_BAR_WIDTH;
+      gap = (availableBarsWidth - barWidth * data.length) / (data.length - 1);
+    }
+
+    return {
+      barWidth: Math.max(MIN_BAR_WIDTH, Math.min(MAX_BAR_WIDTH, barWidth)),
+      gap: Math.max(0, gap),
+    };
+  })();
+  const computedBarWidth = computedLayout.barWidth;
+  const computedGap = computedLayout.gap;
 
   // Animate on data change — cancel previous animation on cleanup
   useEffect(() => {
@@ -122,7 +175,7 @@ export function SvgBarChart({ data, mode, height = DEFAULT_HEIGHT }: Props): Rea
         rafRef.current = null;
       }
     };
-  }, [data, max]);
+  }, [dataSignature, max]);
 
   const formatLabel = useCallback(
     (value: number) => (mode === 'cost' ? formatCost(value) : formatTokens(value)),
@@ -183,7 +236,7 @@ export function SvgBarChart({ data, mode, height = DEFAULT_HEIGHT }: Props): Rea
         {/* Bars */}
         {data.map((point, index) => {
           const barHeight = max > 0 ? (point.value / max) * chartAreaHeight * animProgress : 0;
-          const x = PADDING_LEFT + index * (BAR_WIDTH + BAR_GAP);
+          const x = PADDING_LEFT + index * (computedBarWidth + computedGap);
           const y = PADDING_TOP + chartAreaHeight - barHeight;
           const label =
             mode === 'cost'
@@ -195,7 +248,7 @@ export function SvgBarChart({ data, mode, height = DEFAULT_HEIGHT }: Props): Rea
               key={point.date}
               x={x}
               y={y}
-              width={BAR_WIDTH}
+              width={computedBarWidth}
               barHeight={barHeight}
               fill={theme.colors.primary}
               opacity={selectedIndex === null || selectedIndex === index ? 1 : 0.4}
@@ -206,13 +259,13 @@ export function SvgBarChart({ data, mode, height = DEFAULT_HEIGHT }: Props): Rea
 
         {/* X-axis labels */}
         {data.map((point, index) => {
-          const x = PADDING_LEFT + index * (BAR_WIDTH + BAR_GAP) + BAR_WIDTH / 2;
+          const x = PADDING_LEFT + index * (computedBarWidth + computedGap) + computedBarWidth / 2;
           return (
             <SvgText
               key={`label-${point.date}`}
               x={x}
               y={height - 6}
-              fontSize={10}
+              fontSize={9}
               fill={theme.colors.textMuted}
               textAnchor="middle"
             >
@@ -225,11 +278,11 @@ export function SvgBarChart({ data, mode, height = DEFAULT_HEIGHT }: Props): Rea
       {/* Tap targets overlay */}
       <View style={[StyleSheet.absoluteFill, styles.tapOverlay]}>
         {data.map((point, index) => {
-          const x = PADDING_LEFT + index * (BAR_WIDTH + BAR_GAP);
+          const x = PADDING_LEFT + index * (computedBarWidth + computedGap);
           return (
             <Pressable
               key={`tap-${point.date}`}
-              style={[styles.tapTarget, { left: x, width: BAR_WIDTH + BAR_GAP }]}
+              style={[styles.tapTarget, { left: x, width: computedBarWidth + computedGap }]}
               onPress={() => handleBarPress(index)}
             />
           );
@@ -244,8 +297,8 @@ export function SvgBarChart({ data, mode, height = DEFAULT_HEIGHT }: Props): Rea
             {
               left:
                 PADDING_LEFT +
-                selectedIndex * (BAR_WIDTH + BAR_GAP) +
-                BAR_WIDTH / 2 -
+                selectedIndex * (computedBarWidth + computedGap) +
+                computedBarWidth / 2 -
                 50,
             },
           ]}
@@ -257,6 +310,16 @@ export function SvgBarChart({ data, mode, height = DEFAULT_HEIGHT }: Props): Rea
     </Pressable>
   );
 }
+
+export const SvgBarChart = React.memo(
+  SvgBarChartComponent,
+  (prevProps, nextProps) => (
+    prevProps.mode === nextProps.mode
+    && prevProps.height === nextProps.height
+    && prevProps.width === nextProps.width
+    && areBarDataEqual(prevProps.data, nextProps.data)
+  ),
+);
 
 function createStyles(colors: ReturnType<typeof useAppTheme>['theme']['colors']) {
   return StyleSheet.create({

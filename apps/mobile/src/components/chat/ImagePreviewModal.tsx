@@ -1,6 +1,7 @@
 import { ImageZoom } from '@likashefqet/react-native-image-zoom';
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
-import { Modal, StyleSheet, Text, View } from 'react-native';
+import { Alert, Modal, StyleSheet, Text, View } from 'react-native';
+import { useTranslation } from 'react-i18next';
 import { Gesture, GestureDetector, gestureHandlerRootHOC } from 'react-native-gesture-handler';
 import Animated, {
   Easing,
@@ -14,6 +15,7 @@ import Animated, {
   type SharedValue,
 } from 'react-native-reanimated';
 import { X } from 'lucide-react-native';
+import { saveImageUriToPhotoLibrary } from '../../services/photo-library';
 import { useAppTheme } from '../../theme';
 import { FontSize, Radius, Space } from '../../theme/tokens';
 import { CircleButton } from '../ui';
@@ -101,6 +103,7 @@ export function ImagePreviewModal({
   onClose,
   onIndexChange,
 }: Props): React.JSX.Element {
+  const { t } = useTranslation('chat');
   const { theme } = useAppTheme();
   const styles = useMemo(() => createStyles(theme.colors), [theme]);
   const closeRequestedRef = useRef(false);
@@ -185,6 +188,42 @@ export function ImagePreviewModal({
     },
     [onIndexChange],
   );
+
+  const handleSaveCurrentImage = useCallback(async (targetIndex: number) => {
+    const uri = uris[targetIndex];
+    if (!uri) return;
+
+    try {
+      const result = await saveImageUriToPhotoLibrary(uri, 'chat-image');
+      if (result === 'permission_denied') {
+        Alert.alert(t('Permission denied'));
+        return;
+      }
+      Alert.alert(t('Saved to Photos!'));
+    } catch (error) {
+      console.warn('[ImagePreviewModal] save failed:', error);
+      Alert.alert(t('Failed to save'));
+    }
+  }, [t, uris]);
+
+  const showImageActions = useCallback((targetIndex: number) => {
+    Alert.alert(
+      t('Image options'),
+      undefined,
+      [
+        {
+          text: t('Cancel'),
+          style: 'cancel',
+        },
+        {
+          text: t('Save to Photos'),
+          onPress: () => {
+            void handleSaveCurrentImage(targetIndex);
+          },
+        },
+      ],
+    );
+  }, [handleSaveCurrentImage, t]);
 
   const panGesture = useMemo(
     () =>
@@ -337,6 +376,18 @@ export function ImagePreviewModal({
     ],
   );
 
+  const longPressGesture = useMemo(
+    () =>
+      Gesture.LongPress()
+        .minDuration(550)
+        .maxDistance(18)
+        .onStart(() => {
+          if (!uris.length) return;
+          runOnJS(showImageActions)(currentIndex.value);
+        }),
+    [currentIndex, showImageActions, uris.length],
+  );
+
   const overlayAnimatedStyle = useAnimatedStyle(() => {
     const dismissFactor = interpolate(
       dismissTranslateY.value,
@@ -396,7 +447,7 @@ export function ImagePreviewModal({
             />
           </Animated.View>
 
-          <GestureDetector gesture={panGesture}>
+          <GestureDetector gesture={Gesture.Simultaneous(panGesture, longPressGesture)}>
             <Animated.View style={[styles.gestureSurface, contentAnimatedStyle]}>
               <Animated.View
                 style={[

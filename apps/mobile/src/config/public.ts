@@ -20,7 +20,11 @@ type PublicEnv = Partial<Record<
   | 'EXPO_PUBLIC_REVENUECAT_PRO_ENTITLEMENT_ID'
   | 'EXPO_PUBLIC_REVENUECAT_PRO_OFFERING_ID'
   | 'EXPO_PUBLIC_REVENUECAT_PRO_PACKAGE_ID'
-  | 'EXPO_PUBLIC_REVENUECAT_TEST_API_KEY',
+  | 'EXPO_PUBLIC_REVENUECAT_TEST_API_KEY'
+  | 'EXPO_PUBLIC_YOUMIND_GOOGLE_IOS_CLIENT_ID'
+  | 'EXPO_PUBLIC_YOUMIND_GOOGLE_ANDROID_CLIENT_ID'
+  | 'EXPO_PUBLIC_YOUMIND_GOOGLE_WEB_CLIENT_ID'
+  | 'EXPO_PUBLIC_YOUMIND_APP_SECRET',
   string | undefined
 >> & Partial<NodeJS.ProcessEnv>;
 
@@ -43,6 +47,10 @@ const STATIC_PUBLIC_ENV: PublicEnv = {
   EXPO_PUBLIC_REVENUECAT_PRO_OFFERING_ID: process.env.EXPO_PUBLIC_REVENUECAT_PRO_OFFERING_ID,
   EXPO_PUBLIC_REVENUECAT_PRO_PACKAGE_ID: process.env.EXPO_PUBLIC_REVENUECAT_PRO_PACKAGE_ID,
   EXPO_PUBLIC_REVENUECAT_TEST_API_KEY: process.env.EXPO_PUBLIC_REVENUECAT_TEST_API_KEY,
+  EXPO_PUBLIC_YOUMIND_GOOGLE_IOS_CLIENT_ID: process.env.EXPO_PUBLIC_YOUMIND_GOOGLE_IOS_CLIENT_ID,
+  EXPO_PUBLIC_YOUMIND_GOOGLE_ANDROID_CLIENT_ID: process.env.EXPO_PUBLIC_YOUMIND_GOOGLE_ANDROID_CLIENT_ID,
+  EXPO_PUBLIC_YOUMIND_GOOGLE_WEB_CLIENT_ID: process.env.EXPO_PUBLIC_YOUMIND_GOOGLE_WEB_CLIENT_ID,
+  EXPO_PUBLIC_YOUMIND_APP_SECRET: process.env.EXPO_PUBLIC_YOUMIND_APP_SECRET,
 };
 
 function parseBooleanEnv(value: string | undefined | null): boolean | null {
@@ -93,6 +101,13 @@ export type PublicRevenueCatConfig = {
   offeringId: string | null;
   packageId: string | null;
   testApiKey: string | null;
+};
+
+export type PublicYouMindAuthConfig = {
+  googleIosClientId: string | null;
+  googleAndroidClientId: string | null;
+  googleWebClientId: string | null;
+  appSecret: string | null;
 };
 
 export function resolvePublicAppLinks(env: PublicEnv = STATIC_PUBLIC_ENV): PublicAppLinks {
@@ -147,6 +162,15 @@ export function resolvePublicRevenueCatConfig(env: PublicEnv = STATIC_PUBLIC_ENV
   };
 }
 
+export function resolvePublicYouMindAuthConfig(env: PublicEnv = STATIC_PUBLIC_ENV): PublicYouMindAuthConfig {
+  return {
+    googleIosClientId: readOptionalEnv('EXPO_PUBLIC_YOUMIND_GOOGLE_IOS_CLIENT_ID', env),
+    googleAndroidClientId: readOptionalEnv('EXPO_PUBLIC_YOUMIND_GOOGLE_ANDROID_CLIENT_ID', env),
+    googleWebClientId: readOptionalEnv('EXPO_PUBLIC_YOUMIND_GOOGLE_WEB_CLIENT_ID', env),
+    appSecret: readOptionalEnv('EXPO_PUBLIC_YOUMIND_APP_SECRET', env),
+  };
+}
+
 export function buildSupportEmailUrl(email: string | null): string | null {
   if (!email) return null;
   return `mailto:${email}`;
@@ -155,3 +179,4 @@ export function buildSupportEmailUrl(email: string | null): string | null {
 export const publicAppLinks = resolvePublicAppLinks();
 export const publicAnalyticsConfig = resolvePublicAnalyticsConfig();
 export const publicRevenueCatConfig = resolvePublicRevenueCatConfig();
+export const publicYouMindAuthConfig = resolvePublicYouMindAuthConfig();

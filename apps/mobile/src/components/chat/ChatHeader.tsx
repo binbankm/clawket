@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Animated, Easing, StyleSheet, Text, View } from "react-native";
 import * as Haptics from "expo-haptics";
-import { Menu, RefreshCw, Users } from "lucide-react-native";
+import { Menu, RefreshCw, SquarePen, Users } from "lucide-react-native";
 import { useTranslation } from "react-i18next";
 import { ConnectionState } from "../../types";
 import { useAppTheme } from "../../theme";
@@ -25,6 +25,7 @@ type Props = {
   onAgentActivity?: () => void;
   refreshDisabled: boolean;
   refreshing: boolean;
+  rightActionKind?: "refresh" | "new";
   topPadding: number;
   wallpaperActive?: boolean;
 };
@@ -109,6 +110,7 @@ export function ChatHeader({
   onAgentActivity,
   refreshDisabled,
   refreshing,
+  rightActionKind = "refresh",
   topPadding,
   wallpaperActive,
 }: Props): React.JSX.Element {
@@ -284,12 +286,20 @@ export function ChatHeader({
 
       <IconButton
         icon={
-          <Animated.View style={refreshing ? refreshIconStyle : undefined}>
-            <RefreshCw
-              size={headerActionIconSize}
-              color={headerActionIconColor}
-              strokeWidth={headerActionStrokeWidth}
-            />
+          <Animated.View style={rightActionKind === "refresh" && refreshing ? refreshIconStyle : undefined}>
+            {rightActionKind === "new" ? (
+              <SquarePen
+                size={headerActionIconSize}
+                color={headerActionIconColor}
+                strokeWidth={headerActionStrokeWidth}
+              />
+            ) : (
+              <RefreshCw
+                size={headerActionIconSize}
+                color={headerActionIconColor}
+                strokeWidth={headerActionStrokeWidth}
+              />
+            )}
           </Animated.View>
         }
         onPress={() => {

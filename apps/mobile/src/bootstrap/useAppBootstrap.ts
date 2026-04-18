@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { GatewayClient } from '../services/gateway';
-import { resolveGatewayBackendKind, resolveGlobalMainSessionKey } from '../services/gateway-backends';
+import { getGatewayBackendCapabilities, resolveGatewayBackendKind, resolveGlobalMainSessionKey } from '../services/gateway-backends';
 import { resolveGatewayCacheScopeId } from '../services/gateway-cache-scope';
 import { NodeClient } from '../services/node-client';
 import { LastOpenedSessionSnapshot, StorageService } from '../services/storage';
@@ -25,7 +25,7 @@ type Props = {
 
 function buildAgentPreview(
   agentId: string,
-  backendKind: 'openclaw' | 'hermes',
+  backendKind: 'openclaw' | 'hermes' | 'youmind',
   identity?: {
     agentName?: string;
     agentEmoji?: string;
@@ -76,7 +76,7 @@ export function useAppBootstrap({ gateway, nodeClient }: Props) {
     configPromise.then((saved) => {
       setConfig(saved);
       gateway.configure(saved);
-      if (saved?.url) {
+      if (saved?.url && getGatewayBackendCapabilities(saved).gatewayConnection) {
         gateway.connect();
       }
     });
@@ -122,6 +122,9 @@ export function useAppBootstrap({ gateway, nodeClient }: Props) {
           config: savedConfig,
         });
         const backendKind = resolveGatewayBackendKind(savedConfig);
+        if (backendKind === 'youmind' && savedConfig?.url && gatewayConfigsState.activeId) {
+          void StorageService.migrateLegacyYouMindState(savedConfig.url, gatewayConfigsState.activeId);
+        }
         // Hermes phase 1 uses a single global 'main' agent; OpenClaw
         // restores whichever agent the user had last open. The helper
         // keeps the dispatch centralized and returns null for OpenClaw

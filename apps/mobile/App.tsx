@@ -23,6 +23,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { ConfigTab } from './src/screens/ConfigScreen/ConfigTab';
 import { ChatTab } from './src/screens/ChatScreen/ChatTab';
 import { ConsoleTab } from './src/screens/ConsoleScreen/ConsoleTab';
+import { ProfileTab } from './src/screens/ProfileScreen/ProfileTab';
 import { OpenClawPermissionsScreen } from './src/screens/ConfigScreen/OpenClawPermissionsScreen';
 import {
   renderConsoleModalScreens,
@@ -60,7 +61,7 @@ import {
   shouldShowChatReplyNotification,
 } from './src/services/chat-notifications';
 import { StorageService } from './src/services/storage';
-import { resolveGatewayBackendKind } from './src/services/gateway-backends';
+import { getGatewayBackendCapabilities, resolveGatewayBackendKind, resolveGlobalMainSessionKey } from './src/services/gateway-backends';
 import { resolveGatewayCacheScopeId } from './src/services/gateway-cache-scope';
 import { analyticsEvents } from './src/services/analytics/events';
 import { useDeepLinkHandler } from './src/hooks/useDeepLinkHandler';
@@ -85,6 +86,7 @@ type RootTabParamList = {
   Chat: undefined;
   Office: undefined;
   Console: undefined;
+  Profile: undefined;
   My: undefined;
 };
 
@@ -428,6 +430,9 @@ function AppContent({
 
   // Mark unread when chatFinal arrives while not on Chat tab
   useEffect(() => {
+    if (!getGatewayBackendCapabilities(config).gatewayConnection) {
+      return () => {};
+    }
     const off = gateway.on('chatFinal', () => {
       if (activeTabRef.current !== 'Chat') {
         hasUnreadChatRef.current = true;
@@ -435,7 +440,7 @@ function AppContent({
       }
     });
     return off;
-  }, [gateway]);
+  }, [config, gateway]);
 
   // Track whether a full-bleed WebView screen (e.g. Docs) is active
   const [isWebViewScreen, setIsWebViewScreen] = useState(false);
@@ -498,10 +503,15 @@ function AppContent({
     setOfficeGuideVisible(false);
   }, []);
 
+  const backendCapabilities = useMemo(() => getGatewayBackendCapabilities(config), [config]);
   const backendKind = useMemo(() => resolveGatewayBackendKind(config), [config]);
+  const showOfficeTab = backendCapabilities.gatewayConnection;
+  const showConsoleTab = backendCapabilities.consoleRoot;
+  const showProfileTab = backendKind === 'youmind';
+  const consoleTabLabel = backendKind === 'youmind' ? t('Workspace') : t('Console');
   const mainSessionKey = useMemo(
-    () => resolveMainSessionKey(currentAgentId, { mainSessionKey: backendKind === 'hermes' ? 'main' : null }),
-    [backendKind, currentAgentId],
+    () => resolveMainSessionKey(currentAgentId, { mainSessionKey: resolveGlobalMainSessionKey(config) }),
+    [config, currentAgentId],
   );
   const isMultiAgent = agents.length > 1;
 
@@ -518,7 +528,7 @@ function AppContent({
   }, [currentAgentId, isPro]);
 
   useEffect(() => {
-    if (backendKind !== 'hermes' || currentAgentId === 'main') return;
+    if (backendKind === 'openclaw' || currentAgentId === 'main') return;
     setCurrentAgentIdState('main');
     StorageService.setCurrentAgentId('main');
   }, [backendKind, currentAgentId]);
@@ -540,7 +550,7 @@ function AppContent({
   }, []);
 
   const syncGatewayKeepAlive = useCallback(() => {
-    const hasGatewayConfig = Boolean(config?.url);
+    const hasGatewayConfig = Boolean(config?.url) && backendCapabilities.gatewayConnection;
     const shouldRun = hasGatewayConfig && shouldRunGatewayKeepAlive(gateway.getConnectionState(), appStateRef.current);
     if (!shouldRun) {
       clearGatewayKeepAliveTimer();
@@ -549,14 +559,16 @@ function AppContent({
     if (gatewayKeepAliveTimerRef.current) return;
 
     gatewayKeepAliveTimerRef.current = setInterval(() => {
-      const stillRunnable = Boolean(config?.url) && shouldRunGatewayKeepAlive(gateway.getConnectionState(), appStateRef.current);
+      const stillRunnable = Boolean(config?.url)
+        && backendCapabilities.gatewayConnection
+        && shouldRunGatewayKeepAlive(gateway.getConnectionState(), appStateRef.current);
       if (!stillRunnable) {
         clearGatewayKeepAliveTimer();
         return;
       }
       gateway.request('last-heartbeat', {}).catch(() => {});
     }, GATEWAY_KEEPALIVE_INTERVAL_MS);
-  }, [clearGatewayKeepAliveTimer, config?.url, gateway]);
+  }, [backendCapabilities.gatewayConnection, clearGatewayKeepAliveTimer, config?.url, gateway]);
 
   // Increment gatewayEpoch when connection becomes ready after a switch.
   // This ensures data-reload effects fire only after the new gateway is connected.
@@ -596,7 +608,7 @@ function AppContent({
         return;
       }
       if (nextState !== 'active' || prevState === 'active') return;
-      if (!config?.url) return;
+      if (!config?.url || !backendCapabilities.gatewayConnection) return;
 
       const awayMs = backgroundedAtRef.current ? Date.now() - backgroundedAtRef.current : 0;
       backgroundedAtRef.current = null;
@@ -619,7 +631,7 @@ function AppContent({
       syncGatewayKeepAlive();
     });
     return () => sub.remove();
-  }, [config?.url, gateway, syncGatewayKeepAlive]);
+  }, [backendCapabilities.gatewayConnection, config?.url, gateway, syncGatewayKeepAlive]);
 
   useEffect(() => {
     syncGatewayKeepAlive();
@@ -632,14 +644,14 @@ function AppContent({
   useEffect(() => {
     nodeClient.setCapabilityToggles(nodeCapabilityToggles);
 
-    if (config?.url && nodeEnabled) {
+    if (config?.url && nodeEnabled && backendCapabilities.gatewayConnection) {
       nodeClient.configure(config);
       nodeClient.disconnect();
       nodeClient.connect();
     } else {
       nodeClient.disconnect();
     }
-  }, [nodeClient, config, nodeEnabled, nodeCapabilityToggles]);
+  }, [backendCapabilities.gatewayConnection, nodeClient, config, nodeEnabled, nodeCapabilityToggles]);
 
   // NodeClient invoke dispatch
   useEffect(() => {
@@ -686,7 +698,7 @@ function AppContent({
   }, [currentAgentId, navigationReady, rootNavigationRef, setCurrentAgentId]);
 
   useEffect(() => {
-    if (Platform.OS !== 'ios') return;
+    if (Platform.OS !== 'ios' || !backendCapabilities.gatewayConnection) return;
 
     const handleNotificationResponse = (
       response: Notifications.NotificationResponse | null | undefined,
@@ -717,10 +729,10 @@ function AppContent({
     return () => {
       subscription.remove();
     };
-  }, [openChatFromNotification]);
+  }, [backendCapabilities.gatewayConnection, openChatFromNotification]);
 
   useEffect(() => {
-    if (Platform.OS !== 'ios') return;
+    if (Platform.OS !== 'ios' || !backendCapabilities.gatewayConnection) return;
 
     const off = gateway.on('chatFinal', ({ sessionKey, message, runId }) => {
       if (!sessionKey) return;
@@ -755,7 +767,7 @@ function AppContent({
     });
 
     return off;
-  }, [agents, currentAgentId, gateway]);
+  }, [agents, backendCapabilities.gatewayConnection, currentAgentId, gateway]);
 
   useEffect(() => {
     if (!navigationReady || !pendingChatNotificationOpen) return;
@@ -1093,31 +1105,53 @@ function AppContent({
                     } : {}),
                   }}
                 />
-                <Tab.Screen
-                  name="Office"
-                  component={OfficeTab}
-                  options={{
-                    tabBarLabel: t('Office'),
-                    ...(Platform.OS === 'ios' ? {
-                      tabBarIcon: ({ focused }: { focused: boolean }) => ({ sfSymbol: focused ? 'building.2.fill' : 'building.2' }),
-                    } : {}),
-                  }}
-                />
-                <Tab.Screen
-                  name="Console"
-                  component={ConsoleTab}
-                  options={{
-                    tabBarLabel: t('Console'),
-                    ...(Platform.OS === 'ios' ? {
-                      tabBarIcon: ({ focused }: { focused: boolean }) => ({ sfSymbol: focused ? 'terminal.fill' : 'terminal' }),
-                    } : {}),
-                  }}
-                />
+                {showOfficeTab ? (
+                  <Tab.Screen
+                    name="Office"
+                    component={OfficeTab}
+                    options={{
+                      tabBarLabel: t('Office'),
+                      ...(Platform.OS === 'ios' ? {
+                        tabBarIcon: ({ focused }: { focused: boolean }) => ({ sfSymbol: focused ? 'building.2.fill' : 'building.2' }),
+                      } : {}),
+                    }}
+                  />
+                ) : null}
+                {showConsoleTab ? (
+                  <Tab.Screen
+                    name="Console"
+                    component={ConsoleTab}
+                    options={{
+                      tabBarLabel: consoleTabLabel,
+                      ...(Platform.OS === 'ios' ? {
+                        tabBarIcon: ({ focused }: { focused: boolean }) => ({
+                          sfSymbol: backendKind === 'youmind'
+                            ? (focused ? 'square.grid.2x2.fill' : 'square.grid.2x2')
+                            : (focused ? 'terminal.fill' : 'terminal'),
+                        }),
+                      } : {}),
+                    }}
+                  />
+                ) : null}
+                {showProfileTab ? (
+                  <Tab.Screen
+                    name="Profile"
+                    component={ProfileTab}
+                    options={{
+                      tabBarLabel: t('Profile'),
+                      ...(Platform.OS === 'ios' ? {
+                        tabBarIcon: ({ focused }: { focused: boolean }) => ({
+                          sfSymbol: focused ? 'person.crop.circle.fill' : 'person.crop.circle',
+                        }),
+                      } : {}),
+                    }}
+                  />
+                ) : null}
                 <Tab.Screen
                   name="My"
                   component={ConfigTab}
                   options={{
-                    tabBarLabel: t('Setting'),
+                    tabBarLabel: backendKind === 'youmind' ? t('Settings') : t('Setting'),
                     ...(Platform.OS === 'ios' ? {
                       tabBarIcon: ({ focused }: { focused: boolean }) => ({ sfSymbol: focused ? 'gearshape.fill' : 'gearshape' }),
                     } : {}),

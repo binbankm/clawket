@@ -13,6 +13,7 @@ type RootTabParamList = {
   Chat: undefined;
   Office: undefined;
   Console: undefined;
+  Profile: undefined;
   My: undefined;
 };
 

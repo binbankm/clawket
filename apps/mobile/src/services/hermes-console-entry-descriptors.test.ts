@@ -13,6 +13,7 @@ describe('hermes-console-entry-descriptors', () => {
 
     expect(items.map((item) => item.key)).toEqual([
       'sessions',
+      'discover',
       'history',
       'cron',
       'skills',
@@ -37,5 +38,25 @@ describe('hermes-console-entry-descriptors', () => {
       screen: 'Docs',
     });
     expect(items.at(-1)?.params).toBeUndefined();
+  });
+
+  it('includes Discover in the Hermes console action list', () => {
+    const items = buildHermesConsoleActionDescriptors({
+      tConsole,
+      tCommon,
+      docsUrl: null,
+    });
+
+    const discoverIndex = items.findIndex((item) => item.key === 'discover');
+    const sessionsIndex = items.findIndex((item) => item.key === 'sessions');
+    const historyIndex = items.findIndex((item) => item.key === 'history');
+
+    expect(discoverIndex).toBeGreaterThan(sessionsIndex);
+    expect(discoverIndex).toBeLessThan(historyIndex);
+    expect(items[discoverIndex]).toMatchObject({
+      screen: 'Discover',
+      title: 'Discover',
+      description: 'Browse skills across ClawHub and skills.sh',
+    });
   });
 });

@@ -50,6 +50,11 @@ import {
   SessionSidebarTabKey,
   SidebarSessionItem,
 } from './session-sidebar-data';
+import {
+  resolveSessionSidebarSelection,
+  shouldResetSessionSidebarChrome,
+  type SessionSidebarPresentation,
+} from './session-sidebar-presentation';
 
 type ThemeColors = ReturnType<typeof useAppTheme>['theme']['colors'];
 
@@ -118,6 +123,7 @@ type ChannelIconProps = {
   colors: ThemeColors;
   iconBadgeSize: number;
   styles: ReturnType<typeof createStyles>;
+  compact?: boolean;
 };
 
 const ChannelIcon = React.memo(function ChannelIcon({
@@ -125,6 +131,7 @@ const ChannelIcon = React.memo(function ChannelIcon({
   colors,
   iconBadgeSize,
   styles,
+  compact = false,
 }: ChannelIconProps) {
   type IconDef = { icon: React.ReactNode; bg: string };
   const size = FontSize.base;
@@ -162,7 +169,7 @@ const ChannelIcon = React.memo(function ChannelIcon({
 
   const def = resolve();
   return (
-    <View style={styles.iconBadgeWrap}>
+    <View style={[styles.iconBadgeWrap, compact && styles.iconBadgeWrapCompact]}>
       <View
         style={{
           width: iconBadgeSize,
@@ -206,8 +213,11 @@ const SessionCard = React.memo(function SessionCard({
   const { t } = useTranslation('chat');
   const title = sessionLabel(session, { currentAgentName });
   const time = relativeTime(session.updatedAt);
-  const preview = session.previewText;
+  const preview = session.previewText?.trim() || null;
+  const previewLabel = preview || (session.localOnly ? t('Open cached messages') : null);
   const modelBadges = resolveModelBadges(session);
+  const hasMetaBadges = !!session.localOnly || !!modelBadges.provider || !!modelBadges.model;
+  const isCompactCard = !previewLabel && !hasMetaBadges;
 
   const handlePress = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -220,10 +230,16 @@ const SessionCard = React.memo(function SessionCard({
       onPress={handlePress}
       activeOpacity={0.7}
     >
-      <View style={styles.sessionRow}>
-        <ChannelIcon session={session} colors={colors} iconBadgeSize={iconBadgeSize} styles={styles} />
+      <View style={[styles.sessionRow, isCompactCard && styles.sessionRowCompact]}>
+        <ChannelIcon
+          session={session}
+          colors={colors}
+          iconBadgeSize={iconBadgeSize}
+          styles={styles}
+          compact={isCompactCard}
+        />
         <View style={styles.sessionContent}>
-          <View style={styles.sessionTopRow}>
+          <View style={[styles.sessionTopRow, isCompactCard && styles.sessionTopRowCompact]}>
             <Text style={[styles.sessionTitle, isActive && styles.sessionTitleActive]} numberOfLines={1}>
               {title}
             </Text>
@@ -247,31 +263,35 @@ const SessionCard = React.memo(function SessionCard({
               />
             </View>
           </View>
-          <Text style={styles.sessionPreview} numberOfLines={2}>
-            {preview || (session.localOnly ? t('Open cached messages') : t('No messages yet'))}
-          </Text>
-          <View style={styles.sessionMetaRow}>
-            {session.localOnly ? (
-              <View style={[styles.metaBadge, { backgroundColor: colors.surfaceMuted }]}>
-                <CloudOff size={11} color={colors.textMuted} strokeWidth={2} />
-                <Text style={[styles.metaBadgeText, { color: colors.textMuted }]}>{t('Cached')}</Text>
-              </View>
-            ) : null}
-            {!!modelBadges.provider ? (
-              <View style={[styles.metaBadge, { backgroundColor: colors.surfaceMuted }]}>
-                <Text style={[styles.metaBadgeText, { color: colors.textMuted }]} numberOfLines={1}>
-                  {modelBadges.provider}
-                </Text>
-              </View>
-            ) : null}
-            {!!modelBadges.model ? (
-              <View style={[styles.metaBadge, { backgroundColor: colors.surfaceMuted }]}>
-                <Text style={[styles.metaBadgeText, { color: colors.textMuted }]} numberOfLines={1}>
-                  {modelBadges.model}
-                </Text>
-              </View>
-            ) : null}
-          </View>
+          {previewLabel ? (
+            <Text style={styles.sessionPreview} numberOfLines={2}>
+              {previewLabel}
+            </Text>
+          ) : null}
+          {hasMetaBadges ? (
+            <View style={styles.sessionMetaRow}>
+              {session.localOnly ? (
+                <View style={[styles.metaBadge, { backgroundColor: colors.surfaceMuted }]}>
+                  <CloudOff size={11} color={colors.textMuted} strokeWidth={2} />
+                  <Text style={[styles.metaBadgeText, { color: colors.textMuted }]}>{t('Cached')}</Text>
+                </View>
+              ) : null}
+              {!!modelBadges.provider ? (
+                <View style={[styles.metaBadge, { backgroundColor: colors.surfaceMuted }]}>
+                  <Text style={[styles.metaBadgeText, { color: colors.textMuted }]} numberOfLines={1}>
+                    {modelBadges.provider}
+                  </Text>
+                </View>
+              ) : null}
+              {!!modelBadges.model ? (
+                <View style={[styles.metaBadge, { backgroundColor: colors.surfaceMuted }]}>
+                  <Text style={[styles.metaBadgeText, { color: colors.textMuted }]} numberOfLines={1}>
+                    {modelBadges.model}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+          ) : null}
         </View>
       </View>
     </TouchableOpacity>
@@ -283,6 +303,7 @@ type Props = {
   activeSessionKey: string | null;
   topPadding: number;
   bottomPadding: number;
+  presentation?: SessionSidebarPresentation;
   gatewayConfigId: string;
   onClose: () => void;
   onSelectSession: (session: SessionInfo) => void;
@@ -305,6 +326,7 @@ export function SessionSidebar({
   activeSessionKey,
   topPadding,
   bottomPadding,
+  presentation = 'default',
   gatewayConfigId,
   onClose,
   onSelectSession,
@@ -335,6 +357,8 @@ export function SessionSidebar({
   const [selectedSession, setSelectedSession] = useState<SidebarSessionItem | null>(null);
   const [editingLabel, setEditingLabel] = useState('');
   const [actionState, setActionState] = useState<string | null>(null);
+  const compactChrome = presentation === 'chat-only';
+  const showRemoteSessionActions = presentation !== 'chat-only';
 
   const loadLocalState = useCallback(async () => {
     const [cacheIndex, pinnedKeys] = await Promise.all([
@@ -413,11 +437,27 @@ export function SessionSidebar({
   }, [searchText, t, visibleSessions]);
 
   useEffect(() => {
-    if (!externalSelection?.requestedAt) return;
-    setActiveTab(externalSelection.tab ?? 'sessions');
-    const targetChannel = normalizeChannelId(externalSelection.channel);
-    setActiveChannel(targetChannel ?? 'all');
-  }, [externalSelection]);
+    const nextSelection = resolveSessionSidebarSelection(presentation, externalSelection);
+    if (!nextSelection) return;
+    setActiveTab(nextSelection.activeTab);
+    setActiveChannel(normalizeChannelId(nextSelection.activeChannel) ?? 'all');
+  }, [externalSelection, presentation]);
+
+  useEffect(() => {
+    if (!shouldResetSessionSidebarChrome({
+      presentation,
+      activeTab,
+      activeChannel,
+    })) {
+      return;
+    }
+    if (activeTab !== 'sessions') {
+      setActiveTab('sessions');
+    }
+    if (activeChannel !== 'all') {
+      setActiveChannel('all');
+    }
+  }, [activeChannel, activeTab, presentation]);
 
   useEffect(() => {
     if (activeChannel === 'all') return;
@@ -572,7 +612,7 @@ export function SessionSidebar({
   return (
     <View style={[styles.sidebarPanel, { paddingTop: topPadding, paddingBottom: bottomPadding }]}>
       <View style={styles.sidebarHeader}>
-        {isMultiAgent ? (
+        {!compactChrome && isMultiAgent ? (
           <TouchableOpacity
             style={styles.agentSelector}
             onPress={onAgentSwitch}
@@ -607,32 +647,6 @@ export function SessionSidebar({
         </View>
       </View>
 
-      <View style={styles.tabBarWrap}>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.tabBar}
-          style={styles.tabBarScroll}
-        >
-          {TABS.map((tab) => {
-            const isActive = activeTab === tab.key;
-            return (
-              <TouchableOpacity
-                key={tab.key}
-                style={[styles.tab, isActive && styles.tabActive]}
-                onPress={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  setActiveTab(tab.key);
-                }}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.tabText, isActive && styles.tabTextActive]}>{i18n.t(tab.labelKey, { ns: tab.ns })}</Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
-      </View>
-
       <SearchInput
         value={searchText}
         onChangeText={setSearchText}
@@ -640,7 +654,37 @@ export function SessionSidebar({
         style={styles.searchInput}
       />
 
-      {activeTab === 'sessions' ? (
+      {!compactChrome ? (
+        <>
+          <View style={styles.tabBarWrap}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.tabBar}
+              style={styles.tabBarScroll}
+            >
+              {TABS.map((tab) => {
+                const isActive = activeTab === tab.key;
+                return (
+                  <TouchableOpacity
+                    key={tab.key}
+                    style={[styles.tab, isActive && styles.tabActive]}
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      setActiveTab(tab.key);
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.tabText, isActive && styles.tabTextActive]}>{i18n.t(tab.labelKey, { ns: tab.ns })}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+        </>
+      ) : null}
+
+      {!compactChrome && activeTab === 'sessions' ? (
         <View style={styles.sessionsTopContent}>
           <View style={styles.channelFilterWrap}>
             <ScrollView
@@ -736,41 +780,45 @@ export function SessionSidebar({
             </TouchableOpacity>
           </View>
 
-          <View style={styles.modalActionDividerWrap}>
-            <View style={styles.modalActionDivider} />
-          </View>
+          {showRemoteSessionActions ? (
+            <>
+              <View style={styles.modalActionDividerWrap}>
+                <View style={styles.modalActionDivider} />
+              </View>
 
-          <View style={styles.modalSection}>
-            <TouchableOpacity
-              style={[styles.outlineActionButton, { borderColor: colors.warning }]}
-              disabled={!!actionState || !selectedSession || !!selectedSession.localOnly}
-              onPress={handleReset}
-              activeOpacity={0.75}
-            >
-              <Text style={[styles.outlineActionText, { color: colors.warning, opacity: selectedSession?.localOnly ? 0.45 : 1 }]}>
-                {actionState === 'reset' ? buttonTitleForAction(actionState) : t('Reset Remote Session')}
-              </Text>
-            </TouchableOpacity>
+              <View style={styles.modalSection}>
+                <TouchableOpacity
+                  style={[styles.outlineActionButton, { borderColor: colors.warning }]}
+                  disabled={!!actionState || !selectedSession || !!selectedSession.localOnly}
+                  onPress={handleReset}
+                  activeOpacity={0.75}
+                >
+                  <Text style={[styles.outlineActionText, { color: colors.warning, opacity: selectedSession?.localOnly ? 0.45 : 1 }]}>
+                    {actionState === 'reset' ? buttonTitleForAction(actionState) : t('Reset Remote Session')}
+                  </Text>
+                </TouchableOpacity>
 
-            <TouchableOpacity
-              style={[styles.outlineActionButton, { borderColor: colors.error }]}
-              disabled={!!actionState || !selectedSession || !!selectedSession.localOnly || !!(selectedSession && isMainSession(selectedSession.key))}
-              onPress={handleDelete}
-              activeOpacity={0.75}
-            >
-              <Text
-                style={[
-                  styles.outlineActionText,
-                  {
-                    color: colors.error,
-                    opacity: selectedSession?.localOnly || (selectedSession && isMainSession(selectedSession.key)) ? 0.45 : 1,
-                  },
-                ]}
-              >
-                {actionState === 'delete' ? buttonTitleForAction(actionState) : t('Delete Remote Session')}
-              </Text>
-            </TouchableOpacity>
-          </View>
+                <TouchableOpacity
+                  style={[styles.outlineActionButton, { borderColor: colors.error }]}
+                  disabled={!!actionState || !selectedSession || !!selectedSession.localOnly || !!(selectedSession && isMainSession(selectedSession.key))}
+                  onPress={handleDelete}
+                  activeOpacity={0.75}
+                >
+                  <Text
+                    style={[
+                      styles.outlineActionText,
+                      {
+                        color: colors.error,
+                        opacity: selectedSession?.localOnly || (selectedSession && isMainSession(selectedSession.key)) ? 0.45 : 1,
+                      },
+                    ]}
+                  >
+                    {actionState === 'delete' ? buttonTitleForAction(actionState) : t('Delete Remote Session')}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </>
+          ) : null}
         </ScrollView>
       </ModalSheet>
     </View>
@@ -938,8 +986,14 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['theme']['colors'])
       alignItems: 'flex-start',
       gap: Space.sm,
     },
+    sessionRowCompact: {
+      alignItems: 'center',
+    },
     iconBadgeWrap: {
       paddingTop: 2,
+    },
+    iconBadgeWrapCompact: {
+      paddingTop: 0,
     },
     sessionContent: {
       flex: 1,
@@ -949,6 +1003,9 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['theme']['colors'])
       flexDirection: 'row',
       alignItems: 'flex-start',
       gap: Space.sm,
+    },
+    sessionTopRowCompact: {
+      alignItems: 'center',
     },
     sessionTitle: {
       flex: 1,

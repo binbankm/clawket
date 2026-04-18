@@ -16,6 +16,8 @@ import {
   markCurrentAppUpdateAnnouncementShown,
   shouldShowCurrentAppUpdateAnnouncement,
 } from '../../services/app-update-announcement';
+import { getGatewayBackendCapabilities } from '../../services/gateway-backends';
+import { requestConfigAddConnection } from '../../services/config-add-connection-request';
 import { ChatScreenLayout } from './ChatScreenLayout';
 import { useChatControllerContext } from './ChatControllerContext';
 import { AppUpdateAnnouncementModal } from './components/AppUpdateAnnouncementModal';
@@ -33,15 +35,30 @@ export function ChatScreen({ openSidebarRequestAt, openAgentSessionsBoardRequest
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const controller = useChatControllerContext();
-  const { debugMode, gateway } = useAppContext();
+  const { config, debugMode, gateway } = useAppContext();
   const isFocused = useIsFocused();
-  const capabilities = React.useMemo(() => gateway.getBackendCapabilities(), [gateway]);
+  const capabilities = React.useMemo(() => getGatewayBackendCapabilities(config), [config]);
   const handledRequestRef = React.useRef<number | null>(null);
   const handledBoardRequestRef = React.useRef<number | null>(null);
   const checkedModeRef = React.useRef<string | null>(null);
   const [announcement, setAnnouncement] = React.useState<AppUpdateAnnouncement | null>(null);
   const [announcementVisible, setAnnouncementVisible] = React.useState(false);
   const currentVersion = React.useMemo(() => getCurrentAppVersion(), []);
+
+  const navigateToConfigHome = React.useCallback(() => {
+    const parentNavigation = navigation.getParent();
+    if (parentNavigation) {
+      parentNavigation.dispatch(
+        CommonActions.navigate({
+          name: 'My',
+          params: { screen: 'ConfigHome' },
+          merge: true,
+        }),
+      );
+      return;
+    }
+    navigation.navigate('My' as never);
+  }, [navigation]);
 
   React.useEffect(() => {
     if (!openSidebarRequestAt) return;
@@ -87,59 +104,31 @@ export function ChatScreen({ openSidebarRequestAt, openAgentSessionsBoardRequest
     };
   }, [currentVersion, debugMode, isFocused]);
 
-  const handleOpenCustomConnection = React.useCallback(() => {
-    const requestedAt = Date.now();
-    const parentNavigation = navigation.getParent();
-    if (parentNavigation) {
-      parentNavigation.dispatch(
-        CommonActions.navigate({
-          name: 'My',
-          params: {
-            state: {
-              routes: [
-                {
-                  name: 'ConfigHome',
-                  params: {
-                    addConnectionRequestAt: requestedAt,
-                    addConnectionTab: 'manual',
-                  },
-                },
-              ],
-            },
-          },
-        }),
-      );
-      return;
-    }
-    navigation.navigate('My' as never);
-  }, [navigation]);
-
   const handleOpenAddGatewayConnection = React.useCallback(() => {
-    const requestedAt = Date.now();
-    const parentNavigation = navigation.getParent();
-    if (parentNavigation) {
-      parentNavigation.dispatch(
-        CommonActions.navigate({
-          name: 'My',
-          params: {
-            state: {
-              routes: [
-                {
-                  name: 'ConfigHome',
-                  params: {
-                    addConnectionRequestAt: requestedAt,
-                    addConnectionTab: 'quick',
-                  },
-                },
-              ],
-            },
-          },
-        }),
-      );
-      return;
-    }
-    navigation.navigate('My' as never);
-  }, [navigation]);
+    requestConfigAddConnection({
+      tab: 'quick',
+    });
+    navigateToConfigHome();
+  }, [navigateToConfigHome]);
+
+  const handleOpenQuickConnectionFlow = React.useCallback((flow: 'local' | 'youmind') => {
+    requestConfigAddConnection({
+      tab: 'quick',
+      flow,
+    });
+    navigateToConfigHome();
+  }, [navigateToConfigHome]);
+
+  const handleNavigateToConfigAddConnection = React.useCallback((options?: {
+    tab?: 'quick' | 'manual';
+    flow?: 'local' | 'youmind';
+  }) => {
+    requestConfigAddConnection({
+      tab: options?.tab === 'manual' ? 'manual' : 'quick',
+      flow: options?.flow,
+    });
+    navigateToConfigHome();
+  }, [navigateToConfigHome]);
 
   const handleOpenManageAgents = React.useCallback(() => {
     const parentNavigation = navigation.getParent();
@@ -176,7 +165,6 @@ export function ChatScreen({ openSidebarRequestAt, openAgentSessionsBoardRequest
 
   const handleAnnouncementEntryPress = React.useCallback(async (entry: AppUpdateAnnouncementEntry) => {
     await closeAnnouncement();
-    const parentNavigation = navigation.getParent();
 
     if (entry.action.type === 'open_url') {
       await openExternalUrl(entry.action.url, () => {
@@ -185,6 +173,15 @@ export function ChatScreen({ openSidebarRequestAt, openAgentSessionsBoardRequest
       return;
     }
 
+    if (entry.action.type === 'navigate_config_add_connection') {
+      handleNavigateToConfigAddConnection({
+        tab: entry.action.tab,
+        flow: entry.action.flow,
+      });
+      return;
+    }
+
+    const parentNavigation = navigation.getParent();
     if (!parentNavigation) return;
 
     if (entry.action.type === 'navigate_tab') {
@@ -229,7 +226,8 @@ export function ChatScreen({ openSidebarRequestAt, openAgentSessionsBoardRequest
       );
       return;
     }
-  }, [closeAnnouncement, navigation, t]);
+
+  }, [closeAnnouncement, handleNavigateToConfigAddConnection, navigation, t]);
 
   return (
     <>
@@ -238,7 +236,7 @@ export function ChatScreen({ openSidebarRequestAt, openAgentSessionsBoardRequest
         insets={insets}
         onOpenSidebar={() => navigation.openDrawer()}
         onAddGatewayConnection={handleOpenAddGatewayConnection}
-        onOpenCustomConnection={handleOpenCustomConnection}
+        onOpenQuickConnectionFlow={handleOpenQuickConnectionFlow}
         onManageAgents={handleOpenManageAgents}
         onOpenAgentSessionsBoard={capabilities.consoleAgentSessionsBoard ? handleOpenAgentSessionsBoard : undefined}
       />

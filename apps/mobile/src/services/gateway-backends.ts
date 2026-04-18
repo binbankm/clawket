@@ -11,6 +11,8 @@ import type { ThinkingLevel } from '../utils/gateway-settings';
 type GatewayLike = Pick<GatewayConfig, 'backendKind' | 'transportKind' | 'mode' | 'relay' | 'hermes'>;
 
 export type GatewayBackendCapabilities = {
+  consoleRoot: boolean;
+  gatewayConnection: boolean;
   chatAbort: boolean;
   chatAttachments: boolean;
   consoleDiscover: boolean;
@@ -45,6 +47,8 @@ export type GatewayBackendDescriptor = {
 };
 
 const OPENCLAW_CAPABILITIES: GatewayBackendCapabilities = {
+  consoleRoot: true,
+  gatewayConnection: true,
   chatAbort: true,
   chatAttachments: true,
   consoleDiscover: true,
@@ -71,9 +75,11 @@ const OPENCLAW_CAPABILITIES: GatewayBackendCapabilities = {
 };
 
 const HERMES_CAPABILITIES: GatewayBackendCapabilities = {
+  consoleRoot: true,
+  gatewayConnection: true,
   chatAbort: false,
   chatAttachments: false,
-  consoleDiscover: false,
+  consoleDiscover: true,
   consoleClawHub: false,
   modelCatalog: true,
   modelSelection: true,
@@ -96,6 +102,34 @@ const HERMES_CAPABILITIES: GatewayBackendCapabilities = {
   openClawConfigScreens: false,
 };
 
+const YOUMIND_CAPABILITIES: GatewayBackendCapabilities = {
+  consoleRoot: true,
+  gatewayConnection: false,
+  chatAbort: true,
+  chatAttachments: false,
+  consoleDiscover: false,
+  consoleClawHub: false,
+  modelCatalog: false,
+  modelSelection: false,
+  configRead: false,
+  configWrite: false,
+  consoleChannels: false,
+  consoleCron: false,
+  consoleCronCreate: false,
+  consoleSkills: false,
+  consoleUsage: false,
+  consoleCost: false,
+  consoleTools: false,
+  consoleNodes: false,
+  consoleFiles: false,
+  consoleLogs: false,
+  consoleAgentList: false,
+  consoleAgentDetail: false,
+  consoleAgentSessionsBoard: false,
+  consoleHeartbeat: false,
+  openClawConfigScreens: false,
+};
+
 const BACKENDS: Record<GatewayBackendKind, GatewayBackendDescriptor> = {
   openclaw: {
     kind: 'openclaw',
@@ -106,6 +140,11 @@ const BACKENDS: Record<GatewayBackendKind, GatewayBackendDescriptor> = {
     kind: 'hermes',
     label: 'Hermes',
     capabilities: HERMES_CAPABILITIES,
+  },
+  youmind: {
+    kind: 'youmind',
+    label: 'YouMind',
+    capabilities: YOUMIND_CAPABILITIES,
   },
 };
 
@@ -120,7 +159,7 @@ export function isGatewayTransportKind(value: unknown): value is GatewayTranspor
 }
 
 export function isGatewayBackendKind(value: unknown): value is GatewayBackendKind {
-  return value === 'openclaw' || value === 'hermes';
+  return value === 'openclaw' || value === 'hermes' || value === 'youmind';
 }
 
 export function resolveGatewayBackendKind(value: GatewayLike | null | undefined): GatewayBackendKind {
@@ -177,12 +216,14 @@ export function getGatewayThinkingLevels(
  */
 export function selectByBackend<T>(
   input: GatewayLike | GatewayBackendKind | null | undefined,
-  options: { openclaw: T; hermes: T },
+  options: { openclaw: T; hermes: T; youmind?: T },
 ): T {
   const kind = typeof input === 'string' && isGatewayBackendKind(input)
     ? input
     : resolveGatewayBackendKind(input as GatewayLike | null | undefined);
-  return kind === 'hermes' ? options.hermes : options.openclaw;
+  if (kind === 'hermes') return options.hermes;
+  if (kind === 'youmind') return options.youmind ?? options.openclaw;
+  return options.openclaw;
 }
 
 /**
@@ -202,6 +243,7 @@ export function resolveGlobalMainSessionKey(
   return selectByBackend<string | null>(input, {
     openclaw: null,
     hermes: 'main',
+    youmind: 'main',
   });
 }
 
@@ -209,6 +251,7 @@ export function getGatewayModeLabel(input: GatewayLike): string {
   const backendKind = resolveGatewayBackendKind(input);
   const transportKind = resolveGatewayTransportKind(input);
   if (backendKind === 'hermes') return 'Hermes';
+  if (backendKind === 'youmind') return 'YouMind';
   switch (transportKind) {
     case 'relay':
       return 'Remote';
@@ -234,9 +277,11 @@ export function buildGatewayDefaultName(input: {
   const host = parseHost(input.url);
   const baseLabel = backendKind === 'hermes'
     ? 'Hermes'
-    : transportKind === 'relay'
-      ? 'Relay'
-      : 'Custom';
+    : backendKind === 'youmind'
+      ? 'YouMind'
+      : transportKind === 'relay'
+        ? 'Relay'
+        : 'Custom';
   if (host) return `${baseLabel} (${host})`;
   return `${baseLabel} Gateway ${input.index}`;
 }

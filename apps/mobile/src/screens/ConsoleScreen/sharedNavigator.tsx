@@ -47,6 +47,9 @@ import { FavoriteMessageDetailScreen } from './FavoriteMessageDetailScreen';
 import { SessionsBoardScreen } from './SessionsBoardScreen';
 import { AgentSessionsBoardScreen } from './AgentSessionsBoardScreen';
 import { DiscoverTab } from '../DiscoverScreen/DiscoverTab';
+import { YouMindBoardDetailScreen } from './YouMindBoardDetailScreen';
+import { YouMindBoardItemWebViewScreen } from './YouMindBoardItemWebViewScreen';
+import { YouMindBoardPickerScreen } from './YouMindBoardPickerScreen';
 
 export type ConsoleStackParamList = {
   ConsoleMenu: undefined;
@@ -87,6 +90,9 @@ export type ConsoleStackParamList = {
     }>;
   };
   FavoriteMessageDetail: { favoriteKey: string };
+  YouMindBoardDetail: { boardId: string; boardName?: string };
+  YouMindBoardItemWebView: { title: string; path: string };
+  YouMindBoardPicker: { selectedBoardId: string };
 };
 
 type ConsoleScreenOptions = {
@@ -254,6 +260,9 @@ export function renderConsoleModalScreens({
       renderScreen('AgentSessionsBoard', AgentSessionsBoardScreen, nativeModalHeaderOptions),
       renderScreen('ChatHistoryDetail', ChatHistoryDetailScreen, nativeModalHeaderOptions),
       renderScreen('FavoriteMessageDetail', FavoriteMessageDetailScreen, nativeModalHeaderOptions),
+      renderScreen('YouMindBoardDetail', YouMindBoardDetailScreen, nativeModalHeaderOptions),
+      renderScreen('YouMindBoardItemWebView', YouMindBoardItemWebViewScreen),
+      renderScreen('YouMindBoardPicker', YouMindBoardPickerScreen, nativeModalHeaderOptions),
     ]
   );
 }
@@ -325,6 +334,9 @@ export function ConsoleTabNavigator(): React.JSX.Element {
       AgentSessionsBoard: withConsoleCapabilityGuard('AgentSessionsBoard', AgentSessionsBoardScreen),
       ChatHistoryDetail: withConsoleCapabilityGuard('ChatHistoryDetail', ChatHistoryDetailScreen),
       FavoriteMessageDetail: withConsoleCapabilityGuard('FavoriteMessageDetail', FavoriteMessageDetailScreen),
+      YouMindBoardDetail: withConsoleCapabilityGuard('YouMindBoardDetail', YouMindBoardDetailScreen),
+      YouMindBoardItemWebView: withConsoleCapabilityGuard('YouMindBoardItemWebView', YouMindBoardItemWebViewScreen),
+      YouMindBoardPicker: withConsoleCapabilityGuard('YouMindBoardPicker', YouMindBoardPickerScreen),
     }),
     [],
   );

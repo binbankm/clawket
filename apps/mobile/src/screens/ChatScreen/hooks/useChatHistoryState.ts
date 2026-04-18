@@ -4,7 +4,7 @@ import { cacheMessageImages, findCachedEntry, generateStableKey, getAllCachedFor
 import { LastOpenedSessionSnapshot, StorageService } from '../../../services/storage';
 import { markHermesConnectTrace } from '../../../services/hermes-connect-debug';
 import { SessionInfo } from '../../../types';
-import { ImageMeta, UiMessage } from '../../../types/chat';
+import { ImageMeta, ToolPresentation, UiMessage } from '../../../types/chat';
 import { sessionKeysMatch } from '../../../utils/session-key';
 import {
   extractAssistantDisplayText,
@@ -88,6 +88,22 @@ function areStringArraysEqual(a?: string[], b?: string[]): boolean {
   return true;
 }
 
+function areToolPresentationsEqual(a?: ToolPresentation[], b?: ToolPresentation[]): boolean {
+  if (a === b) return true;
+  if (!a || !b) return !a && !b;
+  if (a.length !== b.length) return false;
+  for (let index = 0; index < a.length; index++) {
+    const left = a[index];
+    const right = b[index];
+    if (left.kind !== right.kind) return false;
+    if (left.kind === 'image-gallery' && right.kind === 'image-gallery') {
+      if (!areStringArraysEqual(left.imageUris, right.imageUris)) return false;
+      if (!areStringArraysEqual(left.originalImageUris, right.originalImageUris)) return false;
+    }
+  }
+  return true;
+}
+
 function areUiMessagesEquivalent(prev: UiMessage[], next: UiMessage[]): boolean {
   if (prev === next) return true;
   if (prev.length !== next.length) return false;
@@ -111,6 +127,7 @@ function areUiMessagesEquivalent(prev: UiMessage[], next: UiMessage[]): boolean 
     if (a.toolDurationMs !== b.toolDurationMs) return false;
     if (a.toolStartedAt !== b.toolStartedAt) return false;
     if (a.toolFinishedAt !== b.toolFinishedAt) return false;
+    if (!areToolPresentationsEqual(a.toolPresentation, b.toolPresentation)) return false;
   }
   return true;
 }

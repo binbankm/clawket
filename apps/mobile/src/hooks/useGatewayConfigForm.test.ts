@@ -17,10 +17,10 @@ jest.mock('../contexts/GatewayOverlayContext', () => ({
 }));
 
 jest.mock('../contexts/ProPaywallContext', () => ({
-  useProPaywall: () => ({
+  useProPaywall: jest.fn(() => ({
     isPro: false,
     showPaywall: jest.fn(),
-  }),
+  })),
 }));
 
 jest.mock('../services/storage', () => ({
@@ -80,7 +80,7 @@ describe('useGatewayConfigForm', () => {
     expect(result.current.editorTransportKind).toBe('custom');
   });
 
-  it('allows creating a Hermes local connection without separate auth fields', async () => {
+  it('saves Hermes manual connections as custom direct connections without separate auth fields', async () => {
     const onSaved = jest.fn();
     const gateway = {
       disconnect: jest.fn(),
@@ -105,7 +105,6 @@ describe('useGatewayConfigForm', () => {
 
     await act(async () => {
       result.current.setEditorBackendKind('hermes');
-      result.current.setEditorTransportKind('local');
       result.current.setEditorUrl('ws://192.168.1.8:4319/v1/hermes/ws?token=secret');
       result.current.setEditorName('Hermes LAN');
     });
@@ -118,7 +117,7 @@ describe('useGatewayConfigForm', () => {
     expect(lastCall.configs[0]).toMatchObject({
       name: 'Hermes LAN',
       backendKind: 'hermes',
-      transportKind: 'local',
+      transportKind: 'custom',
       mode: 'hermes',
       url: 'ws://192.168.1.8:4319/v1/hermes/ws?token=secret',
       token: undefined,
@@ -130,7 +129,72 @@ describe('useGatewayConfigForm', () => {
     expect(onSaved).toHaveBeenCalled();
   });
 
-  it('keeps OpenClaw direct connections on the legacy auth path', async () => {
+  it('can create multiple YouMind connections without activating them immediately', async () => {
+    const { useProPaywall } = jest.requireMock('../contexts/ProPaywallContext') as {
+      useProPaywall: jest.Mock;
+    };
+    useProPaywall.mockReturnValue({
+      isPro: true,
+      showPaywall: jest.fn(),
+    });
+
+    (StorageService.getGatewayConfigsState as jest.Mock).mockResolvedValue({
+      activeId: 'cfg_existing',
+      configs: [{
+        id: 'cfg_existing',
+        name: 'YouMind (first@example.com)',
+        backendKind: 'youmind',
+        transportKind: 'custom',
+        mode: 'custom',
+        url: 'https://youmind.com',
+        createdAt: 1,
+        updatedAt: 1,
+      }],
+    });
+
+    const gateway = {
+      disconnect: jest.fn(),
+      configure: jest.fn(),
+      connect: jest.fn(),
+      getDeviceIdentity: jest.fn().mockResolvedValue({ deviceId: 'device-1' }),
+    } as any;
+
+    const { result } = renderHook(() =>
+      useGatewayConfigForm({
+        gateway,
+        initialConfig: null,
+        debugMode: false,
+        onSaved: jest.fn(),
+        onReset: jest.fn(),
+      }),
+    );
+
+    await waitFor(() => {
+      expect(result.current.configs.length).toBe(1);
+    });
+
+    await act(async () => {
+      await result.current.createYouMindConfig({
+        id: 'cfg_second',
+        name: 'YouMind (second@example.com)',
+      });
+    });
+
+    const lastCall = (StorageService.setGatewayConfigsState as jest.Mock).mock.calls.at(-1)?.[0];
+    expect(lastCall.activeId).toBe('cfg_existing');
+    expect(lastCall.configs).toHaveLength(2);
+    expect(lastCall.configs[1]).toMatchObject({
+      id: 'cfg_second',
+      name: 'YouMind (second@example.com)',
+      backendKind: 'youmind',
+      transportKind: 'custom',
+      mode: 'custom',
+      url: 'https://youmind.com',
+    });
+    expect(gateway.connect).not.toHaveBeenCalled();
+  });
+
+  it('keeps OpenClaw manual connections on the legacy auth path while saving as custom transport', async () => {
     const onSaved = jest.fn();
     const gateway = {
       disconnect: jest.fn(),
@@ -155,7 +219,6 @@ describe('useGatewayConfigForm', () => {
 
     await act(async () => {
       result.current.setEditorBackendKind('openclaw');
-      result.current.setEditorTransportKind('local');
       result.current.setEditorUrl('ws://192.168.1.20:18789');
       result.current.setEditorToken('legacy-token');
       result.current.setEditorName('OpenClaw LAN');
@@ -169,8 +232,8 @@ describe('useGatewayConfigForm', () => {
     expect(lastCall.configs[0]).toMatchObject({
       name: 'OpenClaw LAN',
       backendKind: 'openclaw',
-      transportKind: 'local',
-      mode: 'local',
+      transportKind: 'custom',
+      mode: 'custom',
       url: 'ws://192.168.1.20:18789',
       token: 'legacy-token',
       password: undefined,

@@ -278,6 +278,7 @@ export function ProPaywallProvider({ children }: { children: React.ReactNode }):
       return;
     }
     if (!snapshot?.isActive || paywallPackages.length === 0) return;
+    if (previewSelectionInitializedRef.current) return;
     const matchingPackage = selectDisplayedRevenueCatPackage(paywallPackages, snapshot);
     if (!matchingPackage) {
       previewSelectionInitializedRef.current = false;
@@ -286,7 +287,6 @@ export function ProPaywallProvider({ children }: { children: React.ReactNode }):
       }
       return;
     }
-    if (previewSelectionInitializedRef.current && matchingPackage.packageIdentifier === selectedPackageId) return;
     previewSelectionInitializedRef.current = true;
     if (matchingPackage.packageIdentifier !== selectedPackageId) {
       setSelectedPackageId(matchingPackage.packageIdentifier);

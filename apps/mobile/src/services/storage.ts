@@ -19,7 +19,7 @@ import {
   ThemeMode,
   normalizeOfficeChannelSlotConfig,
 } from '../types';
-import { AccentScale, defaultAccentId, isAccentScale } from '../theme';
+import { AccentScale, defaultAccentId, isAccentScale } from '../theme/accents';
 import { DEFAULT_CHAT_APPEARANCE, normalizeChatAppearanceSettings } from '../features/chat-appearance/defaults';
 import {
   resolveExistingStoredChatBackgroundImagePath,
@@ -124,6 +124,19 @@ export type DeviceTokenStorageScope = {
   gatewayUrl?: string | null;
 };
 
+export type YouMindAuthSession = {
+  accessToken: string;
+  refreshToken: string;
+  expiresIn: number;
+  createdAtMs: number;
+  user?: {
+    id?: string;
+    email?: string;
+    name?: string;
+    avatarUrl?: string;
+  } | null;
+};
+
 type ProSubscriptionCacheEntry = {
   snapshot: ProSubscriptionSnapshot;
   cachedAtMs: number;
@@ -160,6 +173,9 @@ const KEYS = {
   lifetimeUpgradeAnnouncementShown: 'clawket.lifetimeUpgradeAnnouncementShown.v1',
   autoAppReviewState: 'clawket.autoAppReviewState.v1',
   skillListSortModePrefix: 'clawket.skillListSortMode.v1',
+  youmindAuthPrefix: 'clawket.youmind.auth.v1',
+  youmindDeviceId: 'clawket.youmind.deviceId.v1',
+  youmindLastBoardPrefix: 'clawket.youmind.lastBoard.v1',
 } as const;
 
 const NODE_INVOKE_AUDIT_KEY = 'clawket.nodeInvokeAudit.v1';
@@ -193,6 +209,57 @@ function cachedAgentIdentityStorageKey(scopeId: string, agentId: string): string
 
 function skillListSortModeStorageKey(backendKind: GatewayBackendKind): string {
   return `${KEYS.skillListSortModePrefix}.${backendKind}`;
+}
+
+function normalizeYouMindScope(url: string): string {
+  const trimmed = url.trim();
+  if (!trimmed) return 'default';
+  return sha256(trimmed.replace(/\/+$/, '').toLowerCase());
+}
+
+function normalizeYouMindScopeKey(scopeKey?: string | null): string | null {
+  const trimmed = scopeKey?.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith('cfg:')) {
+    return trimmed.slice(4).trim() || null;
+  }
+  return trimmed;
+}
+
+function normalizeYouMindScopedStorageKey(url: string, scopeKey?: string | null): string {
+  const normalizedScope = normalizeYouMindScopeKey(scopeKey);
+  if (normalizedScope) {
+    return `scope.${sha256(normalizedScope)}`;
+  }
+  return normalizeYouMindScope(url);
+}
+
+function youmindAuthStorageKey(url: string, scopeKey?: string | null): string {
+  return `${KEYS.youmindAuthPrefix}.${normalizeYouMindScopedStorageKey(url, scopeKey)}`;
+}
+
+function youmindPrefixedScopeAuthStorageKey(url: string, scopeKey?: string | null): string | null {
+  const trimmed = scopeKey?.trim();
+  if (!trimmed || trimmed.startsWith('cfg:')) return null;
+  return `${KEYS.youmindAuthPrefix}.${normalizeYouMindScopedStorageKey(url, `cfg:${trimmed}`)}`;
+}
+
+function youmindLegacyAuthStorageKey(url: string): string {
+  return `${KEYS.youmindAuthPrefix}.${normalizeYouMindScope(url)}`;
+}
+
+function youmindLastBoardStorageKey(url: string, scopeKey?: string | null): string {
+  return `${KEYS.youmindLastBoardPrefix}.${normalizeYouMindScopedStorageKey(url, scopeKey)}`;
+}
+
+function youmindPrefixedScopeLastBoardStorageKey(url: string, scopeKey?: string | null): string | null {
+  const trimmed = scopeKey?.trim();
+  if (!trimmed || trimmed.startsWith('cfg:')) return null;
+  return `${KEYS.youmindLastBoardPrefix}.${normalizeYouMindScopedStorageKey(url, `cfg:${trimmed}`)}`;
+}
+
+function youmindLegacyLastBoardStorageKey(url: string): string {
+  return `${KEYS.youmindLastBoardPrefix}.${normalizeYouMindScope(url)}`;
 }
 
 function normalizeDeviceTokenScopePart(value: string | null | undefined): string {
@@ -262,6 +329,44 @@ function normalizeAutoAppReviewState(value: unknown): AutoAppReviewState | null 
     firstSeenAtMs,
     ...(lastAttemptAtMs !== undefined ? { lastAttemptAtMs } : {}),
     ...(lastAttemptVersion ? { lastAttemptVersion } : {}),
+  };
+}
+
+function normalizeYouMindAuthSession(value: unknown): YouMindAuthSession | null {
+  if (!value || typeof value !== 'object') return null;
+  const record = value as Record<string, unknown>;
+  const accessToken = typeof record.accessToken === 'string' ? record.accessToken.trim() : '';
+  const refreshToken = typeof record.refreshToken === 'string' ? record.refreshToken.trim() : '';
+  const expiresIn = typeof record.expiresIn === 'number' && Number.isFinite(record.expiresIn)
+    ? record.expiresIn
+    : 0;
+  const createdAtMs = typeof record.createdAtMs === 'number' && Number.isFinite(record.createdAtMs)
+    ? record.createdAtMs
+    : 0;
+  if (!accessToken || !refreshToken || expiresIn <= 0 || createdAtMs <= 0) return null;
+  const rawUser = record.user;
+  const user = rawUser && typeof rawUser === 'object'
+    ? {
+      id: typeof (rawUser as Record<string, unknown>).id === 'string'
+        ? ((rawUser as Record<string, unknown>).id as string).trim() || undefined
+        : undefined,
+      email: typeof (rawUser as Record<string, unknown>).email === 'string'
+        ? ((rawUser as Record<string, unknown>).email as string).trim() || undefined
+        : undefined,
+      name: typeof (rawUser as Record<string, unknown>).name === 'string'
+        ? ((rawUser as Record<string, unknown>).name as string).trim() || undefined
+        : undefined,
+      avatarUrl: typeof (rawUser as Record<string, unknown>).avatarUrl === 'string'
+        ? ((rawUser as Record<string, unknown>).avatarUrl as string).trim() || undefined
+        : undefined,
+    }
+    : undefined;
+  return {
+    accessToken,
+    refreshToken,
+    expiresIn,
+    createdAtMs,
+    user: user ?? null,
   };
 }
 
@@ -721,6 +826,132 @@ export const StorageService = {
     await SecureStore.deleteItemAsync(KEYS.gatewayConfig, SECURE_OPTIONS);
     await SecureStore.deleteItemAsync(KEYS.gatewayProfilesConfig, SECURE_OPTIONS);
     await SecureStore.deleteItemAsync(KEYS.gatewayConfigsState, SECURE_OPTIONS);
+  },
+
+  async setYouMindAuthSession(url: string, session: YouMindAuthSession, scopeKey?: string | null): Promise<void> {
+    await setJson(youmindAuthStorageKey(url, scopeKey), session);
+  },
+
+  async getYouMindAuthSession(
+    url: string,
+    scopeKey?: string | null,
+    options?: { allowLegacyFallback?: boolean },
+  ): Promise<YouMindAuthSession | null> {
+    const primaryKey = youmindAuthStorageKey(url, scopeKey);
+    const value = await getJson<unknown>(primaryKey);
+    if (value != null) {
+      return normalizeYouMindAuthSession(value);
+    }
+
+    const prefixedScopeKey = youmindPrefixedScopeAuthStorageKey(url, scopeKey);
+    if (prefixedScopeKey) {
+      const prefixedValue = await getJson<unknown>(prefixedScopeKey);
+      const normalizedPrefixed = normalizeYouMindAuthSession(prefixedValue);
+      if (normalizedPrefixed) {
+        await setJson(primaryKey, normalizedPrefixed);
+        return normalizedPrefixed;
+      }
+    }
+
+    if (options?.allowLegacyFallback && scopeKey?.trim()) {
+      const legacyValue = await getJson<unknown>(youmindLegacyAuthStorageKey(url));
+      return normalizeYouMindAuthSession(legacyValue);
+    }
+    return null;
+  },
+
+  async clearYouMindAuthSession(url: string, scopeKey?: string | null): Promise<void> {
+    await SecureStore.deleteItemAsync(youmindAuthStorageKey(url, scopeKey), SECURE_OPTIONS);
+    const prefixedScopeKey = youmindPrefixedScopeAuthStorageKey(url, scopeKey);
+    if (prefixedScopeKey) {
+      await SecureStore.deleteItemAsync(prefixedScopeKey, SECURE_OPTIONS);
+    }
+  },
+
+  async setYouMindLastOpenedBoardId(url: string, boardId: string | null, scopeKey?: string | null): Promise<void> {
+    const key = youmindLastBoardStorageKey(url, scopeKey);
+    const normalized = boardId?.trim();
+    if (!normalized) {
+      await AsyncStorage.removeItem(key);
+      return;
+    }
+    await AsyncStorage.setItem(key, normalized);
+  },
+
+  async getYouMindLastOpenedBoardId(
+    url: string,
+    scopeKey?: string | null,
+    options?: { allowLegacyFallback?: boolean },
+  ): Promise<string | null> {
+    const primaryKey = youmindLastBoardStorageKey(url, scopeKey);
+    let value = await AsyncStorage.getItem(primaryKey);
+    if (!value) {
+      const prefixedScopeKey = youmindPrefixedScopeLastBoardStorageKey(url, scopeKey);
+      if (prefixedScopeKey) {
+        const prefixedValue = await AsyncStorage.getItem(prefixedScopeKey);
+        if (prefixedValue?.trim()) {
+          value = prefixedValue.trim();
+          await AsyncStorage.setItem(primaryKey, value);
+        }
+      }
+    }
+    if (!value && options?.allowLegacyFallback && scopeKey?.trim()) {
+      value = await AsyncStorage.getItem(youmindLegacyLastBoardStorageKey(url));
+    }
+    const normalized = value?.trim();
+    return normalized || null;
+  },
+
+  async migrateLegacyYouMindState(url: string, scopeKey: string): Promise<void> {
+    const normalizedScope = scopeKey.trim();
+    if (!normalizedScope) return;
+
+    const scopedSessionKey = youmindAuthStorageKey(url, normalizedScope);
+    const prefixedScopedSessionKey = youmindPrefixedScopeAuthStorageKey(url, normalizedScope);
+    const legacySessionKey = youmindLegacyAuthStorageKey(url);
+    const [scopedSession, prefixedScopedSession, legacySession] = await Promise.all([
+      getJson<unknown>(scopedSessionKey),
+      prefixedScopedSessionKey ? getJson<unknown>(prefixedScopedSessionKey) : Promise.resolve(null),
+      getJson<unknown>(legacySessionKey),
+    ]);
+    if (scopedSession == null && prefixedScopedSession != null) {
+      await setJson(scopedSessionKey, prefixedScopedSession);
+    } else if (scopedSession == null && legacySession != null) {
+      await setJson(scopedSessionKey, legacySession);
+    }
+
+    const scopedBoardKey = youmindLastBoardStorageKey(url, normalizedScope);
+    const prefixedScopedBoardKey = youmindPrefixedScopeLastBoardStorageKey(url, normalizedScope);
+    const legacyBoardKey = youmindLegacyLastBoardStorageKey(url);
+    const [scopedBoardId, prefixedScopedBoardId, legacyBoardId] = await Promise.all([
+      AsyncStorage.getItem(scopedBoardKey),
+      prefixedScopedBoardKey ? AsyncStorage.getItem(prefixedScopedBoardKey) : Promise.resolve(null),
+      AsyncStorage.getItem(legacyBoardKey),
+    ]);
+    if (!scopedBoardId && prefixedScopedBoardId?.trim()) {
+      await AsyncStorage.setItem(scopedBoardKey, prefixedScopedBoardId.trim());
+    } else if (!scopedBoardId && legacyBoardId?.trim()) {
+      await AsyncStorage.setItem(scopedBoardKey, legacyBoardId.trim());
+    }
+  },
+
+  async setYouMindDeviceId(deviceId: string): Promise<void> {
+    const normalized = deviceId.trim();
+    if (!normalized) {
+      await AsyncStorage.removeItem(KEYS.youmindDeviceId);
+      return;
+    }
+    await AsyncStorage.setItem(KEYS.youmindDeviceId, normalized);
+  },
+
+  async getYouMindDeviceId(): Promise<string | null> {
+    const value = await AsyncStorage.getItem(KEYS.youmindDeviceId);
+    const normalized = value?.trim();
+    return normalized || null;
+  },
+
+  async clearYouMindDeviceId(): Promise<void> {
+    await AsyncStorage.removeItem(KEYS.youmindDeviceId);
   },
 
   async saveGatewayConfigBackup(config: Record<string, unknown>): Promise<GatewayConfigBackupSummary> {

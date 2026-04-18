@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type Server as HttpServer, type ServerResponse } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { homedir } from 'node:os';
 import { delimiter, dirname, join } from 'node:path';
@@ -14,6 +15,9 @@ const DEFAULT_SESSION_ID = 'main';
 const DEFAULT_AGENT_NAME = 'Hermes';
 const BRIDGE_TICK_INTERVAL_MS = 15_000;
 const HEALTH_POLL_INTERVAL_MS = 10_000;
+// One ping-and-sweep cycle. Clients that go silent (no message and no pong)
+// for a full cycle are terminated so their socket slots cannot leak.
+const WS_HEARTBEAT_INTERVAL_MS = 30_000;
 const HERMES_BOOT_TIMEOUT_MS = 20_000;
 // Hermes model catalog reads can trigger a fresh models.dev fetch inside a
 // one-off Python process. That is expensive enough to block bridge request
@@ -246,6 +250,7 @@ type HermesBridgeRequest = {
 
 type HermesLocalBridgeClient = {
   socket: WebSocket;
+  isAlive: boolean;
 };
 
 type HermesActiveRun = {
@@ -565,6 +570,7 @@ export class HermesLocalBridge {
   private wsServer: WebSocketServer | null = null;
   private tickTimer: NodeJS.Timeout | null = null;
   private healthTimer: NodeJS.Timeout | null = null;
+  private wsHeartbeatTimer: NodeJS.Timeout | null = null;
   private hermesChild: ChildProcess | null = null;
   private modelStateCache: { value: HermesModelState; expiresAt: number } | null = null;
   private readonly contextWindowCache = new Map<string, number | null>();
@@ -664,6 +670,9 @@ export class HermesLocalBridge {
     this.healthTimer = setInterval(() => {
       void this.refreshHermesHealth();
     }, HEALTH_POLL_INTERVAL_MS);
+    this.wsHeartbeatTimer = setInterval(() => {
+      this.sweepWsHeartbeats();
+    }, WS_HEARTBEAT_INTERVAL_MS);
 
     await this.refreshHermesHealth();
     await this.prewarmBridgeState();
@@ -693,6 +702,10 @@ export class HermesLocalBridge {
       clearInterval(this.healthTimer);
       this.healthTimer = null;
     }
+    if (this.wsHeartbeatTimer) {
+      clearInterval(this.wsHeartbeatTimer);
+      this.wsHeartbeatTimer = null;
+    }
 
     this.cancelAllActiveRuns();
 
@@ -721,6 +734,13 @@ export class HermesLocalBridge {
       }
       this.hermesChild = null;
     }
+
+    // Drain debounced disk writers so we never lose the last few writes when
+    // the bridge process is being torn down.
+    await Promise.all([
+      this.sessionStore.flush().catch(() => undefined),
+      this.usageLedger.flush().catch(() => undefined),
+    ]);
 
     this.updateSnapshot({
       running: false,
@@ -898,12 +918,18 @@ export class HermesLocalBridge {
   }
 
   private handleWsConnection(socket: WebSocket): void {
-    const client: HermesLocalBridgeClient = { socket };
+    const client: HermesLocalBridgeClient = { socket, isAlive: true };
     this.clients.add(client);
     this.updateSnapshot({ clientCount: this.clients.size });
 
     socket.on('message', (raw) => {
+      // Any inbound application frame proves the client is alive, so the
+      // heartbeat sweep should not terminate it on the next tick.
+      client.isAlive = true;
       void this.handleWsMessage(client, raw);
+    });
+    socket.on('pong', () => {
+      client.isAlive = true;
     });
     socket.on('close', () => {
       this.clients.delete(client);
@@ -916,6 +942,32 @@ export class HermesLocalBridge {
       hermesApiReachable: this.snapshot.hermesApiReachable,
       mode: 'hermes',
     });
+  }
+
+  private sweepWsHeartbeats(): void {
+    for (const client of [...this.clients]) {
+      if (client.socket.readyState !== WebSocket.OPEN) {
+        this.clients.delete(client);
+        continue;
+      }
+      if (!client.isAlive) {
+        this.log('terminating idle ws client (no message or pong within heartbeat window)');
+        try {
+          client.socket.terminate();
+        } catch {
+          // Socket may already be detached; the close handler will clean up.
+        }
+        this.clients.delete(client);
+        continue;
+      }
+      client.isAlive = false;
+      try {
+        client.socket.ping();
+      } catch {
+        // Ignore transient ping errors; the next sweep will catch a dead socket.
+      }
+    }
+    this.updateSnapshot({ clientCount: this.clients.size });
   }
 
   private async handleWsMessage(client: HermesLocalBridgeClient, raw: WebSocket.RawData): Promise<void> {
@@ -4476,11 +4528,81 @@ export class HermesLocalBridge {
   }
 }
 
+// Hermes-bridge stores write small JSON files frequently (one save per
+// appended chat message). Synchronous writes block the event loop, which
+// hurts WS heartbeat latency under load. This persister coalesces writes in
+// a short debounce window and flushes asynchronously, while still allowing
+// callers to await a final flush during process shutdown.
+class DebouncedFilePersister {
+  private timer: NodeJS.Timeout | null = null;
+  private pendingPayloadBuilder: (() => string) | null = null;
+  private inflight: Promise<void> | null = null;
+
+  constructor(
+    private readonly filePath: string,
+    private readonly debounceMs: number = 100,
+    private readonly onError?: (error: unknown) => void,
+  ) {}
+
+  schedule(buildPayload: () => string): void {
+    this.pendingPayloadBuilder = buildPayload;
+    if (this.timer) return;
+    this.timer = setTimeout(() => {
+      this.timer = null;
+      void this.runPendingWrite();
+    }, this.debounceMs);
+  }
+
+  async flush(): Promise<void> {
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+    await this.runPendingWrite();
+    if (this.inflight) {
+      await this.inflight;
+    }
+  }
+
+  private async runPendingWrite(): Promise<void> {
+    if (this.inflight) {
+      await this.inflight;
+    }
+    if (!this.pendingPayloadBuilder) return;
+    const builder = this.pendingPayloadBuilder;
+    this.pendingPayloadBuilder = null;
+    let payload: string;
+    try {
+      payload = builder();
+    } catch (error) {
+      this.onError?.(error);
+      return;
+    }
+    this.inflight = (async () => {
+      try {
+        await mkdir(dirname(this.filePath), { recursive: true });
+        await writeFile(this.filePath, payload, 'utf8');
+      } catch (error) {
+        this.onError?.(error);
+      } finally {
+        this.inflight = null;
+      }
+    })();
+    await this.inflight;
+  }
+}
+
 class HermesBridgeSessionStore {
   private state: HermesBridgeStoreState;
+  private readonly persister: DebouncedFilePersister;
 
   constructor(private readonly filePath: string) {
     this.state = this.load();
+    this.persister = new DebouncedFilePersister(filePath);
+  }
+
+  async flush(): Promise<void> {
+    return this.persister.flush();
   }
 
   count(): number {
@@ -4660,17 +4782,18 @@ class HermesBridgeSessionStore {
   }
 
   private save(): void {
-    mkdirSync(dirname(this.filePath), { recursive: true });
-    const persisted: HermesBridgePersistedState = {
-      version: 1,
-      sessions: this.state.sessions.map((session) => ({
-        key: session.key,
-        sessionId: session.sessionId,
-        title: session.title,
-        updatedAt: session.updatedAt,
-      })),
-    };
-    writeFileSync(this.filePath, JSON.stringify(persisted, null, 2) + '\n', 'utf8');
+    this.persister.schedule(() => {
+      const persisted: HermesBridgePersistedState = {
+        version: 1,
+        sessions: this.state.sessions.map((session) => ({
+          key: session.key,
+          sessionId: session.sessionId,
+          title: session.title,
+          updatedAt: session.updatedAt,
+        })),
+      };
+      return JSON.stringify(persisted, null, 2) + '\n';
+    });
   }
 }
 
@@ -4698,14 +4821,26 @@ function buildHermesApiHeaders(apiKey: string | null): Record<string, string> {
   };
 }
 
-async function probeHermesApi(apiBaseUrl: string, apiKey: string | null): Promise<boolean> {
+async function probeHermesApi(
+  apiBaseUrl: string,
+  apiKey: string | null,
+  options?: { timeoutMs?: number },
+): Promise<boolean> {
+  // Bound the probe so a hung Hermes agent cannot stall bridge bookkeeping or
+  // back up other request handlers waiting on the shared event loop.
+  const timeoutMs = options?.timeoutMs ?? 3_000;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(`${apiBaseUrl}${DEFAULT_HERMES_API_HEALTH_PATH}`, {
       headers: apiKey ? { authorization: `Bearer ${apiKey}` } : undefined,
+      signal: controller.signal,
     });
     return response.ok;
   } catch {
     return false;
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -5585,9 +5720,15 @@ function upsertHermesUsageChannelTotals(
 
 class HermesUsageLedgerStore {
   private state: HermesUsageLedgerPersistedState;
+  private readonly persister: DebouncedFilePersister;
 
   constructor(private readonly filePath: string) {
     this.state = this.load();
+    this.persister = new DebouncedFilePersister(filePath);
+  }
+
+  async flush(): Promise<void> {
+    return this.persister.flush();
   }
 
   readRange(startDate: string, endDate: string): HermesUsageLedgerDayRecord[] {
@@ -5704,7 +5845,6 @@ class HermesUsageLedgerStore {
   }
 
   private save(): void {
-    mkdirSync(dirname(this.filePath), { recursive: true });
-    writeFileSync(this.filePath, JSON.stringify(this.state, null, 2) + '\n', 'utf8');
+    this.persister.schedule(() => JSON.stringify(this.state, null, 2) + '\n');
   }
 }

@@ -13,6 +13,7 @@ import { useNativeStackModalHeader } from '../../hooks/useNativeStackModalHeader
 import { useAppTheme } from '../../theme';
 import { FontSize, FontWeight, Radius, Space } from '../../theme/tokens';
 import { openExternalUrl } from '../../utils/openExternalUrl';
+import { requestConfigAddConnection } from '../../services/config-add-connection-request';
 import type { ConfigStackParamList } from './ConfigTab';
 
 type Navigation = NativeStackNavigationProp<ConfigStackParamList, 'ReleaseNotesHistory'>;
@@ -79,6 +80,15 @@ export function ReleaseNotesHistoryScreen(): React.JSX.Element {
 
     if (entry.action.type === 'navigate_config') {
       navigation.navigate(entry.action.screen);
+      return;
+    }
+
+    if (entry.action.type === 'navigate_config_add_connection') {
+      requestConfigAddConnection({
+        tab: entry.action.tab === 'manual' ? 'manual' : 'quick',
+        flow: entry.action.flow,
+      });
+      navigation.goBack();
       return;
     }
   }, [navigation, t]);

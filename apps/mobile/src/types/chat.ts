@@ -8,10 +8,21 @@ export type MessageUsage = {
 
 export type ImageMeta = { uri: string; width: number; height: number };
 
+export type ToolPresentation =
+  | {
+    kind: 'image-gallery';
+    imageUris: string[];
+    originalImageUris?: string[];
+  };
+
 export type UiMessage = {
   id: string;
   role: 'user' | 'assistant' | 'system' | 'tool';
   text: string;
+  userSkill?: {
+    id: string;
+    name: string;
+  };
   idempotencyKey?: string;
   timestampMs?: number;
   streaming?: boolean;
@@ -27,6 +38,7 @@ export type UiMessage = {
   toolDurationMs?: number;
   toolStartedAt?: number;
   toolFinishedAt?: number;
+  toolPresentation?: ToolPresentation[];
   approval?: {
     id: string;
     command: string;

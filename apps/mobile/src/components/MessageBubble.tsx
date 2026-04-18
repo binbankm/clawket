@@ -3,7 +3,7 @@ import { Animated, Image, Platform, Pressable, StyleSheet, Text, TouchableOpacit
 import { EnrichedMarkdownText } from 'react-native-enriched-markdown';
 import remend from 'remend';
 import { useTranslation } from 'react-i18next';
-import { Star } from 'lucide-react-native';
+import { Lightbulb, Star } from 'lucide-react-native';
 import { ChatRole } from '../types';
 import { ImageMeta, MessageUsage } from '../types/chat';
 import { computeImageLayout } from '../utils/image-layout';
@@ -16,6 +16,7 @@ import {
 import { useAppTheme } from '../theme';
 import { FontSize, FontWeight, Radius, Shadow, Space } from '../theme/tokens';
 import { sanitizeDisplayText, sanitizeUserMessageText } from '../utils/chat-message';
+import { triggerSelectionHaptic } from '../services/haptics';
 import { AGENT_AVATAR_SIZE, AGENT_AVATAR_SLOT_WIDTH } from './chat/messageLayout';
 import { createChatMarkdownStyle, getChatMarkdownFlavor, openChatMarkdownLink } from './chat/chatMarkdown';
 
@@ -35,6 +36,10 @@ type Props = {
   messageId: string;
   role: ChatRole;
   text: string;
+  userSkill?: {
+    id: string;
+    name: string;
+  };
   timestampMs?: number;
   streaming?: boolean;
   imageUris?: string[];
@@ -214,6 +219,7 @@ function MessageBubbleComponent({
   messageId,
   role,
   text,
+  userSkill,
   timestampMs,
   streaming = false,
   imageUris,
@@ -293,6 +299,7 @@ function MessageBubbleComponent({
   const useAndroidStackedUserTimestamp = Platform.OS === 'android';
   const handleLongPress = useCallback(() => {
     if (!onSelectMessage) return;
+    triggerSelectionHaptic();
     bubbleRef.current?.measureInWindow((bubbleX, bubbleY, bubbleWidth, bubbleHeight) => {
       const bubbleFrame = { x: bubbleX, y: bubbleY, width: bubbleWidth, height: bubbleHeight };
       rowRef.current?.measureInWindow((rowX, rowY, rowWidth, rowHeight) => {
@@ -337,6 +344,15 @@ function MessageBubbleComponent({
             shouldShowSelectedStyle && styles.bubbleSelected,
           ]}
         >
+          {userSkill ? (
+            <View style={styles.userSkillRow}>
+              <Lightbulb size={14} color={theme.colors.primary} />
+              <Text style={styles.userSkillText} numberOfLines={1}>
+                {userSkill.name}
+              </Text>
+            </View>
+          ) : null}
+          {userSkill && (hasImages || hasText) && <View style={{ height: 6 }} />}
           {hasImages && (
             <View style={{ overflow: 'hidden', borderRadius: 10, marginHorizontal: -2 }}>
               <ImageGrid uris={imageUris} metas={imageMetas} maxWidth={imageGridWidth - 4} onPress={(index) => onImagePress?.(imageUris, index)} />
@@ -503,6 +519,8 @@ function arePropsEqual(prev: Props, next: Props): boolean {
     prev.messageId === next.messageId &&
     prev.role === next.role &&
     prev.text === next.text &&
+    prev.userSkill?.id === next.userSkill?.id &&
+    prev.userSkill?.name === next.userSkill?.name &&
     prev.timestampMs === next.timestampMs &&
     prev.streaming === next.streaming &&
     prev.avatarUri === next.avatarUri &&
@@ -641,6 +659,19 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['theme']['colors'],
     },
     textUser: {
       color: colors.text,
+    },
+    userSkillRow: {
+      alignSelf: 'flex-start',
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: Space.xs,
+      maxWidth: '100%',
+    },
+    userSkillText: {
+      color: colors.primary,
+      fontSize: Math.max(FontSize.xs, fontSize - 2),
+      fontWeight: FontWeight.medium,
+      flexShrink: 1,
     },
     textSystem: {
       color: colors.bubbleSystemText,

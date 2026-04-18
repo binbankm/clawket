@@ -35,6 +35,8 @@ type Params = {
 
 type GatewayAuthMethod = 'token' | 'password';
 type EditorTabPreference = 'quick' | 'manual';
+type EditorQuickStart = 'default' | 'local' | 'youmind';
+const YOUMIND_DEFAULT_URL = 'https://youmind.com';
 
 function getCreateEditorBackendKind(): GatewayBackendKind {
   return 'openclaw';
@@ -44,8 +46,21 @@ function getCreateEditorTransportKind(): GatewayTransportKind {
   return 'custom';
 }
 
+function normalizeManualEditorTransportKind(
+  transportKind: GatewayTransportKind,
+  options?: { preserveRelay?: boolean },
+): GatewayTransportKind {
+  if (options?.preserveRelay && transportKind === 'relay') {
+    return 'relay';
+  }
+  return 'custom';
+}
+
 function normalizeEditorTransportKind(backendKind: GatewayBackendKind, transportKind: GatewayTransportKind): GatewayTransportKind {
   if (backendKind === 'hermes' && transportKind === 'relay') {
+    return 'custom';
+  }
+  if (backendKind === 'youmind') {
     return 'custom';
   }
   return transportKind;
@@ -91,6 +106,7 @@ export function useGatewayConfigForm({ gateway, initialConfig, debugMode, onSave
   const [editorVisible, setEditorVisible] = useState(false);
   const [editingConfigId, setEditingConfigId] = useState<string | null>(null);
   const [editorPreferredTab, setEditorPreferredTab] = useState<EditorTabPreference>('quick');
+  const [editorQuickStart, setEditorQuickStart] = useState<EditorQuickStart>('default');
   const [editorBackendKind, setEditorBackendKindState] = useState<GatewayBackendKind>(getCreateEditorBackendKind);
   const [editorTransportKind, setEditorTransportKindState] = useState<GatewayTransportKind>(getCreateEditorTransportKind);
   const [editorName, setEditorName] = useState('');
@@ -163,15 +179,25 @@ export function useGatewayConfigForm({ gateway, initialConfig, debugMode, onSave
     [activeConfigId, configs],
   );
   const isRelayEditorLocked = Boolean(editingConfigId && editorTransportKind === 'relay');
-  const editorMode: GatewayMode = useMemo(
-    () => toLegacyGatewayMode({ backendKind: editorBackendKind, transportKind: editorTransportKind }),
-    [editorBackendKind, editorTransportKind],
+  const manualEditorTransportKind = useMemo(
+    () => normalizeManualEditorTransportKind(editorTransportKind, { preserveRelay: isRelayEditorLocked }),
+    [editorTransportKind, isRelayEditorLocked],
   );
-  const editorRequiresDirectAuth = editorBackendKind === 'openclaw' && editorTransportKind !== 'relay';
+  const editorMode: GatewayMode = useMemo(
+    () => toLegacyGatewayMode({ backendKind: editorBackendKind, transportKind: manualEditorTransportKind }),
+    [editorBackendKind, manualEditorTransportKind],
+  );
+  const editorRequiresDirectAuth = editorBackendKind === 'openclaw' && manualEditorTransportKind !== 'relay';
 
   const setEditorBackendKind = useCallback((nextBackendKind: GatewayBackendKind) => {
     setEditorBackendKindState(nextBackendKind);
     setEditorTransportKindState((currentTransportKind) => normalizeEditorTransportKind(nextBackendKind, currentTransportKind));
+    if (nextBackendKind === 'youmind') {
+      setEditorUrl((currentUrl) => currentUrl.trim() || 'https://youmind.com');
+      setEditorToken('');
+      setEditorPassword('');
+      setEditorAuthMethodState('token');
+    }
   }, []);
 
   const setEditorTransportKind = useCallback((nextTransportKind: GatewayTransportKind) => {
@@ -181,6 +207,7 @@ export function useGatewayConfigForm({ gateway, initialConfig, debugMode, onSave
   const closeEditor = useCallback(() => {
     setEditorVisible(false);
     setEditingConfigId(null);
+    setEditorQuickStart('default');
   }, []);
 
   const setEditorAuthMethod = useCallback((method: GatewayAuthMethod) => {
@@ -208,12 +235,16 @@ export function useGatewayConfigForm({ gateway, initialConfig, debugMode, onSave
     }
   }, []);
 
-  const openCreateEditor = useCallback((preferredTab: EditorTabPreference = 'quick') => {
+  const openCreateEditor = useCallback((
+    preferredTab: EditorTabPreference = 'quick',
+    options?: { quickStart?: EditorQuickStart },
+  ) => {
     if (!canAddGatewayConnection(configs.length, isPro)) {
       showPaywall('gatewayConnections');
       return;
     }
     setEditorPreferredTab(preferredTab);
+    setEditorQuickStart(options?.quickStart ?? 'default');
     setEditingConfigId(null);
     setEditorBackendKindState(getCreateEditorBackendKind());
     setEditorTransportKindState(getCreateEditorTransportKind());
@@ -233,6 +264,7 @@ export function useGatewayConfigForm({ gateway, initialConfig, debugMode, onSave
   const openEditEditor = useCallback((configId: string) => {
     const existing = configs.find((item) => item.id === configId);
     if (!existing) return;
+    setEditorQuickStart('default');
     setEditingConfigId(existing.id);
     setEditorBackendKindState(resolveGatewayBackendKind(existing));
     setEditorTransportKindState(resolveGatewayTransportKind(existing));
@@ -264,6 +296,61 @@ export function useGatewayConfigForm({ gateway, initialConfig, debugMode, onSave
     });
   }, [t, gateway, onSaved, showOverlay, hideOverlay]);
 
+  const createYouMindConfig = useCallback(async (params?: {
+    id?: string;
+    name?: string;
+    activate?: boolean;
+    url?: string;
+  }): Promise<SavedGatewayConfig | null> => {
+    if (!canAddGatewayConnection(configs.length, isPro)) {
+      showPaywall('gatewayConnections');
+      return null;
+    }
+
+    const now = Date.now();
+    const trimmedUrl = params?.url?.trim() || YOUMIND_DEFAULT_URL;
+    const created: SavedGatewayConfig = {
+      id: params?.id?.trim() || `gateway_${now}`,
+      name: params?.name?.trim() || buildGatewayDefaultName({
+        backendKind: 'youmind',
+        transportKind: 'custom',
+        url: trimmedUrl,
+        index: configs.length + 1,
+      }),
+      backendKind: 'youmind',
+      transportKind: 'custom',
+      mode: toLegacyGatewayMode({ backendKind: 'youmind', transportKind: 'custom' }),
+      url: trimmedUrl,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    const nextConfigs = [...configs, created];
+    const nextActiveId = params?.activate ? created.id : activeConfigId;
+    await StorageService.setGatewayConfigsState({ activeId: nextActiveId, configs: nextConfigs });
+    setConfigs(nextConfigs);
+    if (params?.activate) {
+      setActiveConfigId(created.id);
+      reconnectGateway(toRuntimeConfig(created, debugMode), `cfg:${created.id}`);
+    }
+    return created;
+  }, [activeConfigId, configs, debugMode, isPro, reconnectGateway, showPaywall]);
+
+  const renameConfig = useCallback(async (configId: string, name: string): Promise<void> => {
+    const trimmedName = name.trim();
+    if (!trimmedName) return;
+    const existing = configs.find((item) => item.id === configId);
+    if (!existing) return;
+    const updated: SavedGatewayConfig = {
+      ...existing,
+      name: trimmedName,
+      updatedAt: Date.now(),
+    };
+    const nextConfigs = configs.map((item) => (item.id === configId ? updated : item));
+    await StorageService.setGatewayConfigsState({ activeId: activeConfigId, configs: nextConfigs });
+    setConfigs(nextConfigs);
+  }, [activeConfigId, configs]);
+
   // Clean up switch timer on unmount
   useEffect(() => {
     return () => {
@@ -283,6 +370,67 @@ export function useGatewayConfigForm({ gateway, initialConfig, debugMode, onSave
     reconnectGateway(toRuntimeConfig(target, debugMode), `cfg:${target.id}`);
   }, [t, activeConfigId, configs, debugMode, reconnectGateway, showOverlay]);
 
+  const quickConnectYouMind = useCallback(async (): Promise<void> => {
+    const existing = configs.find((item) => resolveGatewayBackendKind(item) === 'youmind') ?? null;
+    if (existing) {
+      setEditorVisible(false);
+      setEditingConfigId(null);
+      if (activeConfigId === existing.id) {
+        return;
+      }
+      await activateConfig(existing.id);
+      return;
+    }
+
+    if (!canAddGatewayConnection(configs.length, isPro)) {
+      showPaywall('gatewayConnections');
+      return;
+    }
+
+    const now = Date.now();
+    const created: SavedGatewayConfig = {
+      id: `gateway_${now}`,
+      name: buildGatewayDefaultName({
+        backendKind: 'youmind',
+        transportKind: 'custom',
+        url: YOUMIND_DEFAULT_URL,
+        index: configs.length + 1,
+      }),
+      backendKind: 'youmind',
+      transportKind: 'custom',
+      mode: toLegacyGatewayMode({ backendKind: 'youmind', transportKind: 'custom' }),
+      url: YOUMIND_DEFAULT_URL,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    const nextConfigs = [...configs, created];
+    const nextActiveId = created.id;
+    await StorageService.setGatewayConfigsState({ activeId: nextActiveId, configs: nextConfigs });
+
+    setConfigs(nextConfigs);
+    setActiveConfigId(nextActiveId);
+    setEditorVisible(false);
+    setEditingConfigId(null);
+    analyticsEvents.gatewayConnectSaved({
+      is_editing: false,
+      mode: created.mode,
+      has_password: false,
+      has_token: false,
+      source: 'config_quick_connect',
+    });
+
+    reconnectGateway(toRuntimeConfig(created, debugMode), `cfg:${created.id}`);
+  }, [
+    activeConfigId,
+    activateConfig,
+    configs,
+    debugMode,
+    isPro,
+    reconnectGateway,
+    showPaywall,
+  ]);
+
   const saveEditor = useCallback(async (): Promise<void> => {
     const trimmedUrl = editorUrl.trim();
     const trimmedToken = editorToken.trim();
@@ -292,7 +440,7 @@ export function useGatewayConfigForm({ gateway, initialConfig, debugMode, onSave
     const trimmedRelayClientToken = editorRelayClientToken.trim();
     const now = Date.now();
     const backendKind = editorBackendKind;
-    const transportKind = editorTransportKind;
+    const transportKind = manualEditorTransportKind;
 
     if (!trimmedUrl) {
       Alert.alert(tConfig('Missing URL'), tConfig('Gateway URL is required.'));
@@ -429,6 +577,7 @@ export function useGatewayConfigForm({ gateway, initialConfig, debugMode, onSave
     editorRelaySupportsBootstrap,
     editorRequiresDirectAuth,
     editorTransportKind,
+    manualEditorTransportKind,
     editorMode,
     editorToken,
     editorUrl,
@@ -666,6 +815,7 @@ export function useGatewayConfigForm({ gateway, initialConfig, debugMode, onSave
     editingConfigId,
     isRelayEditorLocked,
     editorPreferredTab,
+    editorQuickStart,
     editorBackendKind,
     editorTransportKind,
     editorMode,
@@ -690,6 +840,9 @@ export function useGatewayConfigForm({ gateway, initialConfig, debugMode, onSave
     setEditorRelayClientToken,
     openCreateEditor,
     openEditEditor,
+    quickConnectYouMind,
+    createYouMindConfig,
+    renameConfig,
     closeEditor,
     saveEditor,
     activateConfig,

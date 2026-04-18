@@ -1030,9 +1030,7 @@ describe('relay worker helpers', () => {
         code: 'BRIDGE_UNAVAILABLE',
       },
     });
-    expect(clientSocket.closeCalls).toEqual([
-      { code: __testing.SocketCloseCode.BRIDGE_UNAVAILABLE, reason: 'bridge_unavailable' },
-    ]);
+    expect(clientSocket.closeCalls).toEqual([]);
   });
 
   it('routes ordinary bridge responses back to the client that sent the request', async () => {

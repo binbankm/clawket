@@ -557,6 +557,86 @@ describe('useChatController contract', () => {
     });
   });
 
+  it('ignores a rapid duplicate send tap before disabled state commits', async () => {
+    let resolveSend: ((value: { runId: string }) => void) | null = null;
+    const gateway = createGateway('ready');
+    gateway.sendChat.mockImplementation(
+      () =>
+        new Promise<{ runId: string }>((resolve) => {
+          resolveSend = resolve;
+        }),
+    );
+
+    const { result } = renderHook(() =>
+      useChatController({
+        gateway: gateway as any,
+        config: null,
+        debugMode: false,
+        showAgentAvatar: true,
+      } as any),
+    );
+
+    await act(async () => {
+      result.current.setInput('hello');
+    });
+
+    const staleOnSend = result.current.onSend;
+
+    await act(async () => {
+      staleOnSend();
+      staleOnSend();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(gateway.sendChat).toHaveBeenCalledTimes(1);
+    expect(mockedAnalytics.chatSendTapped).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveSend?.({ runId: 'run-1' });
+      await Promise.resolve();
+    });
+  });
+
+  it('releases the send tap guard after a failed preflight so the next tap can retry', async () => {
+    const gateway = createGateway('ready');
+    gateway.probeConnection
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(true);
+
+    const { result } = renderHook(() =>
+      useChatController({
+        gateway: gateway as any,
+        config: null,
+        debugMode: false,
+        showAgentAvatar: true,
+      } as any),
+    );
+
+    await act(async () => {
+      result.current.setInput('hello');
+    });
+
+    const staleOnSend = result.current.onSend;
+
+    await act(async () => {
+      staleOnSend();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(gateway.sendChat).not.toHaveBeenCalled();
+
+    await act(async () => {
+      staleOnSend();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(gateway.probeConnection).toHaveBeenCalledTimes(2);
+    expect(gateway.sendChat).toHaveBeenCalledTimes(1);
+  });
+
   it('captures slash command metadata when sending a typed command', async () => {
     const gateway = createGateway('ready');
     gateway.probeConnection.mockResolvedValue(true);

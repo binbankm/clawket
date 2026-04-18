@@ -30,6 +30,7 @@ type Props = {
   onChooseFile: () => void | Promise<void>;
   onCommandPress: () => void;
   onFocus: () => void;
+  onSkillPress?: () => void;
   onModelPress?: () => void;
   onPickImage: () => void | Promise<void>;
   onWebSearchPress?: () => void;
@@ -44,6 +45,7 @@ type Props = {
   voiceInputActive?: boolean;
   voiceInputDisabled?: boolean;
   voiceInputLevel?: number;
+  leadingActionsGap?: number;
 };
 
 export function ChatComposerPane({
@@ -67,6 +69,7 @@ export function ChatComposerPane({
   onChooseFile,
   onCommandPress,
   onFocus,
+  onSkillPress,
   onModelPress,
   onPickImage,
   onWebSearchPress,
@@ -81,6 +84,7 @@ export function ChatComposerPane({
   voiceInputActive,
   voiceInputDisabled,
   voiceInputLevel,
+  leadingActionsGap,
 }: Props): React.JSX.Element {
   const inputEditable = isComposerInputEditable({
     editable: true,
@@ -116,7 +120,9 @@ export function ChatComposerPane({
           onTakePhoto={onTakePhoto}
           onChooseFile={onChooseFile}
           onCommandPress={onCommandPress}
+          onSkillPress={onSkillPress}
           attachDisabled={!inputEditable}
+          skillDisabled={!inputEditable}
           commandDisabled={isConnecting || isSending}
           thinkingLevel={thinkingLevel}
           thinkingLevelOptions={thinkingLevelOptions}
@@ -136,6 +142,7 @@ export function ChatComposerPane({
           voiceInputActive={voiceInputActive}
           voiceInputDisabled={voiceInputDisabled}
           voiceInputLevel={voiceInputLevel}
+          leadingActionsGap={leadingActionsGap}
         />
       </View>
     </GestureDetector>

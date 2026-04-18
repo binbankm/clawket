@@ -60,6 +60,7 @@ export const analyticsEvents = {
 
   chatSendTapped(properties: {
     has_text: boolean;
+    has_skill?: boolean;
     text_length: number;
     attachment_count: number;
     image_count: number;
@@ -70,6 +71,24 @@ export const analyticsEvents = {
     session_key_present: boolean;
   }): void {
     captureAnalyticsEvent('chat_send_tapped', properties);
+  },
+
+  chatSkillPickerOpened(properties: {
+    source: string;
+    session_key_present: boolean;
+    skill_count: number;
+  }): void {
+    captureAnalyticsEvent('chat_skill_picker_opened', properties);
+  },
+
+  chatSkillSelected(properties: {
+    source: string;
+    action: 'select' | 'clear';
+    skill_id?: string;
+    skill_name?: string;
+    session_key_present: boolean;
+  }): void {
+    captureAnalyticsEvent('chat_skill_selected', properties);
   },
 
   messageFavoriteToggled(properties: {
@@ -201,6 +220,36 @@ export const analyticsEvents = {
     source: string;
   }): void {
     captureAnalyticsEvent('pair_request_resolved', properties);
+  },
+
+  youMindSignInTapped(properties: {
+    method: 'apple' | 'google' | 'email';
+    source: string;
+  }): void {
+    captureAnalyticsEvent('youmind_sign_in_tapped', properties);
+  },
+
+  youMindSignInResolved(properties: {
+    method: 'apple' | 'google' | 'email';
+    result: 'success' | 'failure' | 'cancel';
+    source: string;
+  }): void {
+    captureAnalyticsEvent('youmind_sign_in_resolved', properties);
+  },
+
+  youMindMaterialAddTapped(properties: {
+    action: 'link' | 'photo' | 'camera';
+    source: string;
+  }): void {
+    captureAnalyticsEvent('youmind_material_add_tapped', properties);
+  },
+
+  youMindMaterialAddResolved(properties: {
+    action: 'link' | 'photo' | 'camera';
+    result: 'started' | 'success' | 'failure';
+    source: string;
+  }): void {
+    captureAnalyticsEvent('youmind_material_add_resolved', properties);
   },
 
   cronSaveSucceeded(properties: {

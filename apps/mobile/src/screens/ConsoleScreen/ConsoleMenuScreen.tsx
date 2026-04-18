@@ -23,6 +23,7 @@ import { formatConsoleHeartbeatAge } from '../../utils/console-heartbeat';
 import { parseGatewayRuntimeSettings } from '../../utils/gateway-settings';
 import { getConsoleHeaderRefreshState } from './hooks/consoleHeaderRefreshPolicy';
 import { HermesConsoleMenuScreen } from './HermesConsoleMenuScreen';
+import { YouMindConsoleMenuScreen } from './YouMindConsoleMenuScreen';
 import { StatsPosterModal } from './StatsPosterModal';
 import type { ConsoleStackParamList } from './ConsoleTab';
 import { isCronJobForAgent } from './cronData';
@@ -873,6 +874,11 @@ function OpenClawConsoleMenuScreen(): React.JSX.Element {
         title: t('Devices'),
         description: t('Manage paired devices'),
       },
+      ...buildConsoleLibraryEntryDescriptors({
+        backendKind,
+        tConsole: t,
+        tCommon,
+      }),
       {
         key: 'logs',
         screen: 'Logs',
@@ -881,11 +887,6 @@ function OpenClawConsoleMenuScreen(): React.JSX.Element {
         title: t('Logs'),
         description: t('View gateway and agent logs'),
       },
-      ...buildConsoleLibraryEntryDescriptors({
-        backendKind,
-        tConsole: t,
-        tCommon,
-      }),
       ];
       return items.filter((item) => supportsScreen(item.screen));
     },
@@ -1031,6 +1032,7 @@ export function ConsoleMenuScreen(): React.JSX.Element {
   const Component = selectByBackend(config, {
     openclaw: OpenClawConsoleMenuScreen,
     hermes: HermesConsoleMenuScreen,
+    youmind: YouMindConsoleMenuScreen,
   });
   return <Component />;
 }
