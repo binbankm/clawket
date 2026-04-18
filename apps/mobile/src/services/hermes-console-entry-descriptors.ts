@@ -18,7 +18,7 @@ export function buildHermesConsoleActionDescriptors(params: {
   tCommon: TFunction<'common'>;
   docsUrl: string | null;
 }): HermesConsoleActionDescriptor[] {
-  const { tConsole, docsUrl } = params;
+  const { tConsole, tCommon, docsUrl } = params;
 
   return [
     {
@@ -28,6 +28,14 @@ export function buildHermesConsoleActionDescriptors(params: {
       icon: 'sessions',
       title: tConsole('Sessions'),
       description: tConsole('Review Hermes session history and recent activity'),
+    },
+    {
+      key: 'discover',
+      screen: 'Discover',
+      source: 'hermes_console_discover',
+      icon: 'sparkles',
+      title: tCommon('Discover'),
+      description: tCommon('Browse skills across ClawHub and skills.sh'),
     },
     {
       key: 'history',

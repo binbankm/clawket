@@ -1770,6 +1770,41 @@ describe('GatewayClient', () => {
       });
     });
 
+    it('retries Hermes relay session list reads after transient bridge unavailable errors', async () => {
+      client.configure({
+        url: 'wss://example.com',
+        token: 'abc',
+        mode: 'hermes',
+        backendKind: 'hermes',
+        transportKind: 'relay',
+      } as any);
+      (client as any).activeRoute = 'relay';
+
+      const sendRequestSpy = jest
+        .spyOn(client as unknown as { sendRequest: (method: string, params?: object) => Promise<unknown> }, 'sendRequest')
+        .mockRejectedValueOnce(new Error('[BRIDGE_UNAVAILABLE] Hermes bridge is temporarily unavailable. Please retry.'))
+        .mockRejectedValueOnce(new Error('[BRIDGE_UNAVAILABLE] Hermes bridge is temporarily unavailable. Please retry.'))
+        .mockResolvedValue({
+          defaults: { contextTokens: 200_000 },
+          sessions: [{ key: 'agent:main:main' }],
+        });
+
+      const pending = client.listSessions();
+      await flushPromises();
+      expect(sendRequestSpy).toHaveBeenCalledTimes(1);
+
+      jest.advanceTimersByTime(750);
+      await flushPromises();
+      expect(sendRequestSpy).toHaveBeenCalledTimes(2);
+
+      jest.advanceTimersByTime(750);
+      await flushPromises();
+      await expect(pending).resolves.toEqual([
+        { key: 'agent:main:main', contextTokens: 200_000 },
+      ]);
+      expect(sendRequestSpy).toHaveBeenCalledTimes(3);
+    });
+
     it('fetches chat history without includeTools probing', async () => {
       const sendRequestSpy = jest
         .spyOn(client as unknown as { sendRequest: (method: string, params?: object) => Promise<unknown> }, 'sendRequest')
@@ -1782,6 +1817,95 @@ describe('GatewayClient', () => {
 
       expect(sendRequestSpy).toHaveBeenCalledTimes(1);
       expect(sendRequestSpy).toHaveBeenCalledWith('chat.history', { sessionKey: 'session-1', limit: 12 });
+    });
+
+    it('retries Hermes relay history reads after transient bridge unavailable errors', async () => {
+      client.configure({
+        url: 'wss://example.com',
+        token: 'abc',
+        mode: 'hermes',
+        backendKind: 'hermes',
+        transportKind: 'relay',
+      } as any);
+      (client as any).activeRoute = 'relay';
+
+      const sendRequestSpy = jest
+        .spyOn(client as unknown as { sendRequest: (method: string, params?: object) => Promise<unknown> }, 'sendRequest')
+        .mockRejectedValueOnce(new Error('[BRIDGE_UNAVAILABLE] Hermes bridge is temporarily unavailable. Please retry.'))
+        .mockResolvedValue({ messages: [{ role: 'assistant', content: 'recovered' }], thinkingLevel: 'off' });
+
+      const pending = client.fetchHistory('session-1', 12);
+      await flushPromises();
+      expect(sendRequestSpy).toHaveBeenCalledTimes(1);
+
+      jest.advanceTimersByTime(750);
+      await flushPromises();
+      await expect(pending).resolves.toEqual({
+        messages: [{ role: 'assistant', content: 'recovered' }],
+        thinkingLevel: 'off',
+      });
+      expect(sendRequestSpy).toHaveBeenCalledTimes(2);
+    });
+
+    it('retries Hermes relay generic reads (e.g. models.list) after transient bridge unavailable errors', async () => {
+      client.configure({
+        url: 'wss://example.com',
+        token: 'abc',
+        mode: 'hermes',
+        backendKind: 'hermes',
+        transportKind: 'relay',
+      } as any);
+      (client as any).activeRoute = 'relay';
+
+      const sendRequestSpy = jest
+        .spyOn(client as unknown as { sendRequest: (method: string, params?: object) => Promise<unknown> }, 'sendRequest')
+        .mockRejectedValueOnce(new Error('[BRIDGE_UNAVAILABLE] Hermes bridge is temporarily unavailable. Please retry.'))
+        .mockResolvedValue({ models: [{ id: 'gpt-4o' }] });
+
+      const pending = client.request<{ models: Array<{ id: string }> }>('models.list');
+      await flushPromises();
+      expect(sendRequestSpy).toHaveBeenCalledTimes(1);
+
+      jest.advanceTimersByTime(750);
+      await flushPromises();
+      await expect(pending).resolves.toEqual({ models: [{ id: 'gpt-4o' }] });
+      expect(sendRequestSpy).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not retry mutating Hermes calls (e.g. chat.send) on bridge unavailable', async () => {
+      client.configure({
+        url: 'wss://example.com',
+        token: 'abc',
+        mode: 'hermes',
+        backendKind: 'hermes',
+        transportKind: 'relay',
+      } as any);
+      (client as any).activeRoute = 'relay';
+
+      const sendRequestSpy = jest
+        .spyOn(client as unknown as { sendRequest: (method: string, params?: object) => Promise<unknown> }, 'sendRequest')
+        .mockRejectedValue(new Error('[BRIDGE_UNAVAILABLE] Hermes bridge is temporarily unavailable. Please retry.'));
+
+      await expect(client.request('chat.send', { sessionKey: 'main', message: 'hi' })).rejects.toThrow('[BRIDGE_UNAVAILABLE]');
+      expect(sendRequestSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not retry on non-Hermes backends even for whitelisted methods', async () => {
+      client.configure({
+        url: 'wss://example.com',
+        token: 'abc',
+        mode: 'relay',
+        backendKind: 'openclaw',
+        transportKind: 'relay',
+      } as any);
+      (client as any).activeRoute = 'relay';
+
+      const sendRequestSpy = jest
+        .spyOn(client as unknown as { sendRequest: (method: string, params?: object) => Promise<unknown> }, 'sendRequest')
+        .mockRejectedValue(new Error('[BRIDGE_UNAVAILABLE] something'));
+
+      await expect(client.request('models.list')).rejects.toThrow('[BRIDGE_UNAVAILABLE]');
+      expect(sendRequestSpy).toHaveBeenCalledTimes(1);
     });
 
     it('deduplicates concurrent chat history requests for the same session and limit', async () => {

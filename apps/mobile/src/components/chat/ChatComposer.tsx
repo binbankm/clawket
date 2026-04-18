@@ -26,7 +26,7 @@ import Animated, {
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
-import { Brain, MessageSquareText, Mic, Orbit, Paperclip, TerminalSquare, Wrench } from 'lucide-react-native';
+import { Brain, Lightbulb, MessageSquareText, Mic, Orbit, Paperclip, TerminalSquare, Wrench } from 'lucide-react-native';
 import Svg, { Path } from 'react-native-svg';
 import { useAppContext } from '../../contexts/AppContext';
 import { useAppTheme } from '../../theme';
@@ -55,7 +55,9 @@ type Props = {
   onTakePhoto: () => void | Promise<void>;
   onChooseFile: () => void | Promise<void>;
   onCommandPress: () => void;
+  onSkillPress?: () => void;
   attachDisabled: boolean;
+  skillDisabled?: boolean;
   commandDisabled?: boolean;
   thinkingLevel?: string | null;
   thinkingLevelOptions?: ThinkingLevel[];
@@ -76,6 +78,7 @@ type Props = {
   voiceInputActive?: boolean;
   voiceInputDisabled?: boolean;
   voiceInputLevel?: number;
+  leadingActionsGap?: number;
 };
 
 function StopGlyph({ color }: { color: string }): React.JSX.Element {
@@ -95,7 +98,7 @@ function SendArrowGlyph({ color }: { color: string }): React.JSX.Element {
   );
 }
 
-export function ChatComposer({ value, placeholder, animatedPlaceholder = false, editable, canSend, onChangeText, onSend, onPickImage, onTakePhoto, onChooseFile, onCommandPress, attachDisabled, commandDisabled = false, thinkingLevel, thinkingLevelOptions, onSelectThinkingLevel, modelLabel, onModelPress, onWebSearchPress, onPromptPress, isSending = false, onAbort, bottomPadding, bottomOffset, composerRef, onFocus, onBlur, onVoiceInputPress, showVoiceInput = false, voiceInputActive = false, voiceInputDisabled = false, voiceInputLevel = 0 }: Props): React.JSX.Element {
+export function ChatComposer({ value, placeholder, animatedPlaceholder = false, editable, canSend, onChangeText, onSend, onPickImage, onTakePhoto, onChooseFile, onCommandPress, onSkillPress, attachDisabled, skillDisabled = false, commandDisabled = false, thinkingLevel, thinkingLevelOptions, onSelectThinkingLevel, modelLabel, onModelPress, onWebSearchPress, onPromptPress, isSending = false, onAbort, bottomPadding, bottomOffset, composerRef, onFocus, onBlur, onVoiceInputPress, showVoiceInput = false, voiceInputActive = false, voiceInputDisabled = false, voiceInputLevel = 0, leadingActionsGap = Space.xs }: Props): React.JSX.Element {
   const inputRef = useRef<TextInput>(null);
   const inputContentHeightRef = useRef(0);
   const scrollFrameRef = useRef<number | null>(null);
@@ -346,6 +349,45 @@ export function ChatComposer({ value, placeholder, animatedPlaceholder = false, 
     </AttachmentMenu>
   );
 
+  const skillButton = onSkillPress ? (
+    wallpaperActive ? (
+      <Pressable
+        onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); onSkillPress(); }}
+        disabled={skillDisabled || !inputEditable}
+        style={({ pressed }) => [
+          styles.blurButtonClip,
+          pressed && !skillDisabled && inputEditable && styles.skillButtonPressed,
+        ]}
+      >
+        <BlurView tint={blurTint} intensity={blurIntensity} style={styles.blurButtonFill}>
+          <View style={styles.blurButtonTint} />
+        </BlurView>
+        <View style={styles.blurButtonIcon}>
+          <Lightbulb
+            size={20}
+            color={(skillDisabled || !inputEditable) ? colors.textSubtle : colors.text}
+            strokeWidth={2}
+          />
+        </View>
+      </Pressable>
+    ) : (
+      <Pressable
+        onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); onSkillPress(); }}
+        disabled={skillDisabled || !inputEditable}
+        style={({ pressed }) => [
+          styles.attachButtonTrigger,
+          pressed && !skillDisabled && inputEditable && styles.skillButtonPressed,
+        ]}
+      >
+        <Lightbulb
+          size={20}
+          color={(skillDisabled || !inputEditable) ? colors.textSubtle : colors.text}
+          strokeWidth={2}
+        />
+      </Pressable>
+    )
+  ) : null;
+
   const inputField = (
     <View style={[styles.inputWrap, wallpaperActive && styles.inputWrapWallpaper]}>
       {wallpaperActive && (
@@ -433,7 +475,10 @@ export function ChatComposer({ value, placeholder, animatedPlaceholder = false, 
 
   const inputRowContent = (
     <View style={styles.inputRow}>
-      {attachButton}
+      <View style={[styles.leadingActionsRow, { gap: leadingActionsGap }]}>
+        {attachButton}
+        {skillButton}
+      </View>
       {inputField}
       {voiceButton}
       <CircleButton
@@ -530,6 +575,10 @@ function createStyles(
       alignItems: 'center',
       gap: Space.xs,
     },
+    leadingActionsRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
     inputWrap: {
       flex: 1,
       overflow: 'hidden',
@@ -598,6 +647,9 @@ function createStyles(
     blurButtonIcon: {
       alignItems: 'center',
       justifyContent: 'center',
+    },
+    skillButtonPressed: {
+      opacity: 0.84,
     },
     voiceInputButtonWrap: {
       width: 36,

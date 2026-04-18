@@ -127,6 +127,19 @@ export class GatewayClient {
   private static readonly CONNECTION_PROBE_TIMEOUT_MS = 2_500;
   private static readonly RECONNECT_READY_TIMEOUT_MS = 6_000;
   private static readonly HISTORY_CACHE_TTL_MS = 1_000;
+  private static readonly HERMES_BRIDGE_UNAVAILABLE_RETRY_DELAYS_MS = [750, 750];
+  // Idempotent reads only. Mutating calls (chat.send, chat.abort, etc.) must
+  // never be auto-retried because the bridge may have already accepted the
+  // first attempt and a retry would duplicate the side effect.
+  private static readonly HERMES_BRIDGE_RETRY_METHODS = new Set<string>([
+    'sessions.list',
+    'chat.history',
+    'last-heartbeat',
+    'models.list',
+    'model.current',
+    'agents.list',
+    'agent.identity.get',
+  ]);
   private ws: WebSocket | null = null;
   private config: GatewayConfig | null = null;
   private state: ConnectionState = 'idle';
@@ -157,6 +170,24 @@ export class GatewayClient {
   private pendingAgentsListRequest: Promise<AgentsListResult> | null = null;
   private readonly agentIdentityCache = new Map<string, TimedValue<{ name?: string; avatar?: string; emoji?: string }>>();
   private readonly pendingAgentIdentityRequests = new Map<string, Promise<{ name?: string; avatar?: string; emoji?: string }>>();
+
+  // Hermes path skips the OpenClaw connect.challenge handshake, so the only
+  // signal that the upstream bridge is actually responsive is "did we get any
+  // server frame after socket open". We arm a short watchdog at ws.onopen and
+  // clear it on the first inbound frame; a stuck-but-open socket gets recycled
+  // instead of looking ready while requests pile up.
+  private static readonly HERMES_FIRST_FRAME_TIMEOUT_MS = 8_000;
+  private firstFrameTimer: ReturnType<typeof setTimeout> | null = null;
+  private firstFrameReceived = false;
+
+  // Hermes-only proactive idle probe. The bridge pushes a 'tick' every
+  // ~15s; if none arrived for that long we fire a `last-heartbeat` request
+  // and force a reconnect on timeout. This catches half-open Hermes
+  // sockets within ~20s instead of the passive 45s tick watchdog window.
+  private static readonly HERMES_IDLE_PROBE_INTERVAL_MS = 15_000;
+  private static readonly HERMES_IDLE_PROBE_TIMEOUT_MS = 5_000;
+  private hermesIdleProbeTimer: ReturnType<typeof setTimeout> | null = null;
+  private hermesIdleProbeInFlight = false;
 
   // Tick watchdog: detect dead connections when ticks stop arriving
   private tickIntervalMs = 15_000;
@@ -362,6 +393,8 @@ export class GatewayClient {
       if (!this.getBackendOperations().usesConnectHandshake) {
         this.setState('ready');
         this.startTickWatchdog();
+        this.startFirstFrameWatchdog(attemptId);
+        this.startHermesIdleProbe();
         this.logTelemetry('ws_open', {
           attemptId,
           route,
@@ -582,7 +615,7 @@ export class GatewayClient {
     if (inFlight) return inFlight;
 
     const request = (async () => {
-      const payload = await this.sendRequest('sessions.list', {
+      const payload = await this.sendRequestWithHermesBridgeRetry('sessions.list', {
         limit: opts?.limit ?? 100,
         includeLastMessage: true,
         includeDerivedTitles: true,
@@ -885,7 +918,7 @@ export class GatewayClient {
     if (inFlight) return inFlight;
 
     const request = (async () => {
-      const payload = await this.sendRequest('chat.history', { sessionKey, limit });
+      const payload = await this.sendRequestWithHermesBridgeRetry('chat.history', { sessionKey, limit });
       const result = payload as {
         messages?: Array<{ role: string; content: unknown }>;
         sessionId?: string;
@@ -971,9 +1004,14 @@ export class GatewayClient {
     return { ok: result?.ok ?? false };
   }
 
-  /** Generic Gateway request wrapper. */
+  /**
+   * Generic Gateway request wrapper. Routes through the Hermes bridge
+   * retry helper so idempotent reads survive a transient BRIDGE_UNAVAILABLE
+   * window (e.g. while Hermes is restarting). Non-retryable methods and
+   * non-Hermes backends fall straight through to sendRequest unchanged.
+   */
   public async request<T = unknown>(method: string, params?: object): Promise<T> {
-    const payload = await this.sendRequest(method, params);
+    const payload = await this.sendRequestWithHermesBridgeRetry(method, params ?? {});
     return payload as T;
   }
 
@@ -1297,6 +1335,43 @@ export class GatewayClient {
   private readonly sendBackendRequest = <T = unknown>(method: string, params?: object): Promise<T> => (
     this.sendRequest(method, params) as Promise<T>
   );
+
+  private async sendRequestWithHermesBridgeRetry(method: string, params: object): Promise<unknown> {
+    const retryable = this.isHermesRelayBridgeRetryEligible(method);
+    let lastError: unknown;
+    const delays = retryable ? GatewayClient.HERMES_BRIDGE_UNAVAILABLE_RETRY_DELAYS_MS : [];
+
+    for (let attempt = 0; attempt <= delays.length; attempt += 1) {
+      try {
+        return await this.sendRequest(method, params);
+      } catch (error) {
+        lastError = error;
+        if (!retryable || !this.isHermesBridgeUnavailableError(error) || attempt >= delays.length) {
+          throw error;
+        }
+        await this.sleep(delays[attempt] ?? 0);
+      }
+    }
+
+    throw lastError instanceof Error ? lastError : new Error(String(lastError));
+  }
+
+  private isHermesRelayBridgeRetryEligible(method: string): boolean {
+    return this.getBackendKind() === 'hermes'
+      && this.activeRoute === 'relay'
+      && GatewayClient.HERMES_BRIDGE_RETRY_METHODS.has(method);
+  }
+
+  private isHermesBridgeUnavailableError(error: unknown): boolean {
+    if (!(error instanceof Error)) return false;
+    return error.message.includes('[BRIDGE_UNAVAILABLE]');
+  }
+
+  private sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => {
+      setTimeout(resolve, ms);
+    });
+  }
 
   // ---- Private: event emission ----
 
@@ -1638,6 +1713,11 @@ export class GatewayClient {
   // ---- Private: message routing ----
 
   private handleRawMessage(rawData: unknown): void {
+    // Any inbound frame proves the upstream is reachable; clear the
+    // first-frame watchdog so the Hermes path does not recycle a healthy
+    // socket. Safe for OpenClaw because the watchdog is only armed there
+    // when the backend opts out of the connect.challenge handshake.
+    this.markFirstFrameReceived();
     if (typeof rawData === 'string' && rawData.startsWith(RELAY_CONTROL_PREFIX)) {
       const control = parseRelayControlFrame(rawData);
       if (!control) {
@@ -2254,12 +2334,52 @@ export class GatewayClient {
     this.clearChallengeTimer();
     this.clearPairingTimer();
     this.stopTickWatchdog();
+    this.clearFirstFrameWatchdog();
+    this.stopHermesIdleProbe();
+  }
+
+  private startFirstFrameWatchdog(attemptId: number): void {
+    this.clearFirstFrameWatchdog();
+    this.firstFrameReceived = false;
+    this.firstFrameTimer = setTimeout(() => {
+      this.firstFrameTimer = null;
+      // Race guards: a slower attempt may have already been superseded by a
+      // newer connect cycle, or the first frame may have arrived between the
+      // timer firing and us getting scheduled.
+      if (attemptId !== this.connectAttemptId) return;
+      if (this.firstFrameReceived) return;
+      if (this.state !== 'ready') return;
+      this.logTelemetry('hermes_first_frame_timeout', {
+        attemptId,
+        route: this.activeRoute,
+        timeoutMs: GatewayClient.HERMES_FIRST_FRAME_TIMEOUT_MS,
+      });
+      this.reconnect();
+    }, GatewayClient.HERMES_FIRST_FRAME_TIMEOUT_MS);
+  }
+
+  private clearFirstFrameWatchdog(): void {
+    if (this.firstFrameTimer) {
+      clearTimeout(this.firstFrameTimer);
+      this.firstFrameTimer = null;
+    }
+  }
+
+  private markFirstFrameReceived(): void {
+    if (this.firstFrameReceived) return;
+    this.firstFrameReceived = true;
+    this.clearFirstFrameWatchdog();
   }
 
   private startTickWatchdog(): void {
     this.stopTickWatchdog();
     this.lastTickAt = Date.now();
-    const tolerance = this.tickIntervalMs * 3;
+    // Hermes path runs an active idle probe every 15s, so we can use a
+    // tighter passive tolerance (2 missed ticks) before forcing reconnect.
+    // OpenClaw keeps the historical 3-tick tolerance for backward
+    // compatibility with older bridge cadences.
+    const toleranceMultiplier = this.getBackendKind() === 'hermes' ? 2 : 3;
+    const tolerance = this.tickIntervalMs * toleranceMultiplier;
     const check = () => {
       if (this.state !== 'ready') return;
       const elapsed = this.lastTickAt ? Date.now() - this.lastTickAt : tolerance + 1;
@@ -2277,6 +2397,74 @@ export class GatewayClient {
       this.tickWatchdogTimer = setTimeout(check, this.tickIntervalMs);
     };
     this.tickWatchdogTimer = setTimeout(check, tolerance);
+  }
+
+  private startHermesIdleProbe(): void {
+    if (this.getBackendKind() !== 'hermes') return;
+    this.stopHermesIdleProbe();
+    const schedule = () => {
+      this.hermesIdleProbeTimer = setTimeout(() => {
+        this.hermesIdleProbeTimer = null;
+        void this.runHermesIdleProbe();
+      }, GatewayClient.HERMES_IDLE_PROBE_INTERVAL_MS);
+    };
+    schedule();
+  }
+
+  private stopHermesIdleProbe(): void {
+    if (this.hermesIdleProbeTimer) {
+      clearTimeout(this.hermesIdleProbeTimer);
+      this.hermesIdleProbeTimer = null;
+    }
+    this.hermesIdleProbeInFlight = false;
+  }
+
+  private async runHermesIdleProbe(): Promise<void> {
+    if (this.state !== 'ready') return;
+    if (this.getBackendKind() !== 'hermes') return;
+    if (this.hermesIdleProbeInFlight) {
+      // Should not happen because we only schedule one timer at a time,
+      // but defend against a stuck in-flight flag.
+      this.startHermesIdleProbe();
+      return;
+    }
+
+    // If the bridge already pushed a tick within the last interval there
+    // is no need to spend a roundtrip on an active probe.
+    const sinceLastTickMs = this.lastTickAt ? Date.now() - this.lastTickAt : Number.POSITIVE_INFINITY;
+    if (sinceLastTickMs < GatewayClient.HERMES_IDLE_PROBE_INTERVAL_MS) {
+      this.startHermesIdleProbe();
+      return;
+    }
+
+    const probeAttemptId = this.connectAttemptId;
+    this.hermesIdleProbeInFlight = true;
+    try {
+      await Promise.race([
+        this.sendRequest('last-heartbeat', {}),
+        new Promise((_, reject) => setTimeout(
+          () => reject(new Error('hermes_idle_probe_timeout')),
+          GatewayClient.HERMES_IDLE_PROBE_TIMEOUT_MS,
+        )),
+      ]);
+      // Probe succeeded — refresh the tick clock so the passive watchdog
+      // does not reconnect us next tick window.
+      this.lastTickAt = Date.now();
+    } catch (error) {
+      if (probeAttemptId !== this.connectAttemptId) return;
+      this.logTelemetry('hermes_idle_probe_failed', {
+        attemptId: probeAttemptId,
+        route: this.activeRoute,
+        timeoutMs: GatewayClient.HERMES_IDLE_PROBE_TIMEOUT_MS,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      this.hermesIdleProbeInFlight = false;
+      this.reconnect();
+      return;
+    } finally {
+      this.hermesIdleProbeInFlight = false;
+    }
+    this.startHermesIdleProbe();
   }
 
   private stopTickWatchdog(): void {

@@ -22,8 +22,25 @@ const PRIMARY_PAYWALL_PACKAGE_TYPES = [
   'LIFETIME',
 ] as const;
 
+const LIFETIME_UPGRADE_CUTOFF_PACIFIC_ISO = '2026-04-18T07:00:00.000Z';
+const LIFETIME_UPGRADE_CUTOFF_PACIFIC_MS = Date.parse(LIFETIME_UPGRADE_CUTOFF_PACIFIC_ISO);
+
 function isPrimaryPaywallPackageType(packageType: string): boolean {
   return PRIMARY_PAYWALL_PACKAGE_TYPES.includes(packageType as typeof PRIMARY_PAYWALL_PACKAGE_TYPES[number]);
+}
+
+function includesAnnualIdentifier(value: string): boolean {
+  const normalized = value.toLowerCase();
+  return normalized.includes('year')
+    || normalized.includes('annual')
+    || normalized.includes('annually');
+}
+
+function includesLifetimeIdentifier(value: string): boolean {
+  const normalized = value.toLowerCase();
+  return normalized.includes('life')
+    || normalized.includes('forever')
+    || normalized.includes('permanent');
 }
 
 export type ProSubscriptionSnapshot = {
@@ -488,18 +505,10 @@ export function selectSnapshotRevenueCatPackageByMetadata(
   }) ?? null;
   if (directMatch) return directMatch;
 
-  if (identifiers.some((value) => (
-    value.includes('life')
-    || value.includes('forever')
-    || value.includes('permanent')
-  ))) {
+  if (identifiers.some((value) => includesLifetimeIdentifier(value))) {
     return packages.find((item) => item.packageType === 'LIFETIME') ?? null;
   }
-  if (identifiers.some((value) => (
-    value.includes('year')
-    || value.includes('annual')
-    || value.includes('annually')
-  ))) {
+  if (identifiers.some((value) => includesAnnualIdentifier(value))) {
     return packages.find((item) => item.packageType === 'ANNUAL') ?? null;
   }
   if (identifiers.some((value) => value.includes('month'))) {
@@ -508,36 +517,50 @@ export function selectSnapshotRevenueCatPackageByMetadata(
   return null;
 }
 
+export function shouldDisplayGrandfatheredLifetimeUi(snapshot: ProSubscriptionSnapshot | null): boolean {
+  if (!snapshot?.isActive) return false;
+
+  const activeSubscriptionIdentifiers = (snapshot.activeSubscriptionProductIdentifiers ?? [])
+    .map((value) => value.toLowerCase());
+  const metadataIdentifiers = [snapshot.productPlanIdentifier, snapshot.productIdentifier]
+    .filter((value): value is string => Boolean(value))
+    .map((value) => value.toLowerCase());
+
+  const currentPlanLooksAnnual = activeSubscriptionIdentifiers.length > 0
+    ? activeSubscriptionIdentifiers.some((value) => includesAnnualIdentifier(value))
+    : metadataIdentifiers.some((value) => includesAnnualIdentifier(value));
+  if (!currentPlanLooksAnnual) return false;
+
+  const startedAt = snapshot.originalPurchaseDate ?? snapshot.latestPurchaseDate;
+  if (!startedAt) return false;
+
+  const startedAtMs = Date.parse(startedAt);
+  if (Number.isNaN(startedAtMs)) return false;
+
+  return startedAtMs < LIFETIME_UPGRADE_CUTOFF_PACIFIC_MS;
+}
+
 export function selectDisplayedRevenueCatPackage(
   packages: ProPaywallPackage[],
   snapshot: ProSubscriptionSnapshot | null,
 ): ProPaywallPackage | null {
+  if (shouldDisplayGrandfatheredLifetimeUi(snapshot)) {
+    return packages.find((item) => item.packageType === 'LIFETIME') ?? null;
+  }
+
   return selectOwnedLifetimeRevenueCatPackage(packages, snapshot)
     ?? selectActiveRecurringRevenueCatPackage(packages, snapshot);
 }
 
-export function hasLifetimeProAccessFromSnapshot(snapshot: ProSubscriptionSnapshot | null): boolean {
-  const nonSubscriptionIdentifiers = (snapshot?.nonSubscriptionProductIdentifiers ?? [])
-    .map((value) => value.toLowerCase());
-  if (nonSubscriptionIdentifiers.length > 0) return true;
-
-  const identifiers = [snapshot?.productPlanIdentifier, snapshot?.productIdentifier]
-    .filter((value): value is string => Boolean(value))
-    .map((value) => value.toLowerCase());
-
-  return identifiers.some((value) => (
-    value.includes('life')
-    || value.includes('forever')
-    || value.includes('permanent')
-  ));
+export function shouldShowLifetimeUpgradeAnnouncementForSnapshot(snapshot: ProSubscriptionSnapshot | null): boolean {
+  return shouldDisplayGrandfatheredLifetimeUi(snapshot);
 }
 
 export function hasLifetimeProAccess(
   packages: ProPaywallPackage[],
   snapshot: ProSubscriptionSnapshot | null,
 ): boolean {
-  return Boolean(selectOwnedLifetimeRevenueCatPackage(packages, snapshot))
-    || hasLifetimeProAccessFromSnapshot(snapshot);
+  return Boolean(selectOwnedLifetimeRevenueCatPackage(packages, snapshot));
 }
 
 export function isRecurringProPackageType(packageType: string | null | undefined): boolean {
@@ -551,7 +574,7 @@ export function isRevenueCatPackagePurchaseLocked(
 ): boolean {
   if (!targetPackage) return true;
 
-  if (hasLifetimeProAccess(packages, snapshot)) {
+  if (hasLifetimeProAccess(packages, snapshot) || shouldDisplayGrandfatheredLifetimeUi(snapshot)) {
     return true;
   }
 

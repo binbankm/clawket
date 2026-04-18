@@ -190,6 +190,7 @@ export function useChatController({
     gateway.getConnectionState(),
   );
   const sendPreflightInFlightRef = useRef(false);
+  const sendTriggerGuardRef = useRef(false);
 
   const [chatStream, setChatStream] = useState<string | null>(null);
   const [chatStreamSegments, setChatStreamSegments] = useState<StreamSegment[]>(
@@ -1518,6 +1519,22 @@ export function useChatController({
       SEND_HEALTH_WINDOW_MS,
     ]);
 
+  const acquireSendTriggerGuard = useCallback((): boolean => {
+    if (sendTriggerGuardRef.current) return false;
+    sendTriggerGuardRef.current = true;
+    return true;
+  }, []);
+
+  const releaseSendTriggerGuard = useCallback(() => {
+    sendTriggerGuardRef.current = false;
+  }, []);
+
+  useEffect(() => {
+    // This guard only covers the gap before React commits disabled UI state.
+    // Once render catches up, normal composer locking takes over.
+    releaseSendTriggerGuard();
+  }, [isPreparingSend, isSending, releaseSendTriggerGuard]);
+
   const submitMessage = useCallback(
     (text: string, images: PendingImage[]) => {
       const sessionKey = history.sessionKey;
@@ -1668,9 +1685,27 @@ export function useChatController({
   );
 
   const submitMessageWithConnectionCheck = useCallback(
-    async (text: string, images: PendingImage[]): Promise<boolean> => {
-      if (sendPreflightInFlightRef.current) return false;
-      if (!history.sessionKey) return false;
+    async (
+      text: string,
+      images: PendingImage[],
+      options?: { triggerGuardHeld?: boolean },
+    ): Promise<boolean> => {
+      const triggerGuardHeld = options?.triggerGuardHeld === true;
+      const acquiredGuardLocally = !triggerGuardHeld;
+      if (acquiredGuardLocally && !acquireSendTriggerGuard()) return false;
+      let shouldReleaseTriggerGuard = true;
+      if (sendPreflightInFlightRef.current) {
+        if (acquiredGuardLocally) {
+          releaseSendTriggerGuard();
+        }
+        return false;
+      }
+      if (!history.sessionKey) {
+        if (acquiredGuardLocally) {
+          releaseSendTriggerGuard();
+        }
+        return false;
+      }
 
       sendPreflightInFlightRef.current = true;
       setIsPreparingSend(true);
@@ -1682,15 +1717,21 @@ export function useChatController({
           setPendingImages(prepared.images);
         }
         submitMessage(text, prepared.images);
+        shouldReleaseTriggerGuard = false;
         return true;
       } finally {
         sendPreflightInFlightRef.current = false;
         setIsPreparingSend(false);
+        if (shouldReleaseTriggerGuard) {
+          releaseSendTriggerGuard();
+        }
       }
     },
     [
+      acquireSendTriggerGuard,
       ensureConnectionReadyForSend,
       history.sessionKey,
+      releaseSendTriggerGuard,
       setPendingImages,
       submitMessage,
     ],
@@ -1865,6 +1906,7 @@ export function useChatController({
       const text = input.trim();
       const images = [...pendingImages];
       if ((!text && images.length === 0) || !history.sessionKey) return;
+      if (!acquireSendTriggerGuard()) return;
 
       if (voiceInputActive) {
         void stopSpeechRecognitionAsync().catch(() => {});
@@ -1887,6 +1929,7 @@ export function useChatController({
         images.length === 0 &&
         openModelPicker()
       ) {
+        releaseSendTriggerGuard();
         setInput("");
         clearPendingImages();
         return;
@@ -1897,6 +1940,7 @@ export function useChatController({
         images.length === 0 &&
         openCommandPicker("think")
       ) {
+        releaseSendTriggerGuard();
         setInput("");
         clearPendingImages();
         return;
@@ -1907,6 +1951,7 @@ export function useChatController({
         images.length === 0 &&
         openCommandPicker("fast")
       ) {
+        releaseSendTriggerGuard();
         setInput("");
         clearPendingImages();
         return;
@@ -1917,6 +1962,7 @@ export function useChatController({
         images.length === 0 &&
         openCommandPicker("reasoning")
       ) {
+        releaseSendTriggerGuard();
         setInput("");
         clearPendingImages();
         return;
@@ -1925,7 +1971,9 @@ export function useChatController({
       // Haptic feedback — crisp impact
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Rigid);
 
-      const sent = await submitMessageWithConnectionCheck(text, images);
+      const sent = await submitMessageWithConnectionCheck(text, images, {
+        triggerGuardHeld: true,
+      });
       if (!sent) return;
 
       // Clear input without remounting TextInput (preserves keyboard)
@@ -1939,11 +1987,13 @@ export function useChatController({
   }, [
     clearPendingImages,
     clearPersistedDraft,
+    acquireSendTriggerGuard,
     history.sessionKey,
     input,
     openCommandPicker,
     openModelPicker,
     pendingImages,
+    releaseSendTriggerGuard,
     submitMessageWithConnectionCheck,
     voiceInputActive,
   ]);

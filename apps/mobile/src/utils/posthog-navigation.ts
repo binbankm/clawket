@@ -76,6 +76,9 @@ export const TRACKED_SCREEN_DEFINITIONS: Record<string, ScreenDefinition> = {
   AgentSessionsBoard: { name: 'Agent & Session Board', area: 'console', tab: 'Console', kind: 'list' },
   ChatHistoryDetail: { name: 'Chat History Detail', area: 'console', tab: 'Console', kind: 'detail' },
   FavoriteMessageDetail: { name: 'Favorite Message Detail', area: 'console', tab: 'Console', kind: 'detail' },
+  YouMindBoardDetail: { name: 'YouMind Board Detail', area: 'console', tab: 'Console', kind: 'detail' },
+  YouMindBoardItemWebView: { name: 'YouMind Board Item', area: 'console', tab: 'Console', kind: 'webview' },
+  YouMindBoardPicker: { name: 'YouMind Board Picker', area: 'console', tab: 'Console', kind: 'list' },
 };
 
 function isNavigationState(value: unknown): value is NavigationLikeState {

@@ -11,6 +11,8 @@ import {
   selectOwnedLifetimeRevenueCatPackage,
   selectRevenueCatPackages,
   selectSnapshotRevenueCatPackageByMetadata,
+  shouldDisplayGrandfatheredLifetimeUi,
+  shouldShowLifetimeUpgradeAnnouncementForSnapshot,
   toProPaywallPackage,
   type ProSubscriptionSnapshot,
 } from './pro-subscription';
@@ -481,6 +483,29 @@ describe('selectRevenueCatPackages', () => {
     })).toBe(false);
   });
 
+  it('does not treat stale lifetime metadata on active recurring subscriptions as owned lifetime', () => {
+    const packages = [toProPaywallPackage(monthlyPackage), toProPaywallPackage(lifetimePackage)];
+
+    expect(hasLifetimeProAccess(packages, {
+      isActive: true,
+      entitlementId: 'pro',
+      productIdentifier: 'com.p697.clawket.pro.lifetime',
+      productPlanIdentifier: 'lifetime',
+      activeSubscriptionProductIdentifiers: ['monthly'],
+      purchasedProductIdentifiers: ['monthly'],
+      nonSubscriptionProductIdentifiers: [],
+      originalPurchaseDate: null,
+      latestPurchaseDate: null,
+      expirationDate: null,
+      willRenew: true,
+      store: 'APP_STORE',
+      managementURL: null,
+      originalAppUserId: '$RCAnonymousID:test',
+      requestDate: null,
+      verification: null,
+    })).toBe(false);
+  });
+
   it('locks recurring packages but keeps lifetime purchasable for active recurring subscribers', () => {
     const packages = [toProPaywallPackage(monthlyPackage), toProPaywallPackage(annualPackage), toProPaywallPackage(lifetimePackage)];
     const snapshot: ProSubscriptionSnapshot = {
@@ -531,6 +556,95 @@ describe('selectRevenueCatPackages', () => {
     expect(isRevenueCatPackagePurchaseLocked(packages[0], packages, snapshot)).toBe(true);
     expect(isRevenueCatPackagePurchaseLocked(packages[1], packages, snapshot)).toBe(true);
     expect(isRevenueCatPackagePurchaseLocked(packages[2], packages, snapshot)).toBe(true);
+  });
+
+  it('keeps lifetime purchasable when only stale lifetime metadata exists on an active recurring subscription', () => {
+    const packages = [toProPaywallPackage(monthlyPackage), toProPaywallPackage(annualPackage), toProPaywallPackage(lifetimePackage)];
+    const snapshot: ProSubscriptionSnapshot = {
+      isActive: true,
+      entitlementId: 'pro',
+      productIdentifier: 'com.p697.clawket.pro.lifetime',
+      productPlanIdentifier: 'lifetime',
+      activeSubscriptionProductIdentifiers: ['yearly'],
+      purchasedProductIdentifiers: ['yearly'],
+      nonSubscriptionProductIdentifiers: [],
+      originalPurchaseDate: null,
+      latestPurchaseDate: null,
+      expirationDate: null,
+      willRenew: true,
+      store: 'APP_STORE',
+      managementURL: null,
+      originalAppUserId: '$RCAnonymousID:test',
+      requestDate: null,
+      verification: null,
+    };
+
+    expect(isRevenueCatPackagePurchaseLocked(packages[0], packages, snapshot)).toBe(true);
+    expect(isRevenueCatPackagePurchaseLocked(packages[1], packages, snapshot)).toBe(true);
+    expect(isRevenueCatPackagePurchaseLocked(packages[2], packages, snapshot)).toBe(false);
+  });
+
+  it('shows the grandfathered lifetime UI for active annual members before the Pacific cutoff', () => {
+    expect(shouldDisplayGrandfatheredLifetimeUi({
+      isActive: true,
+      entitlementId: 'pro',
+      productIdentifier: 'com.p697.clawket.pro.yearly',
+      productPlanIdentifier: 'annual',
+      activeSubscriptionProductIdentifiers: ['com.p697.clawket.pro.yearly'],
+      purchasedProductIdentifiers: ['com.p697.clawket.pro.yearly'],
+      nonSubscriptionProductIdentifiers: [],
+      originalPurchaseDate: '2026-04-18T06:59:59.000Z',
+      latestPurchaseDate: '2026-04-18T06:59:59.000Z',
+      expirationDate: '2027-04-18T06:59:59.000Z',
+      willRenew: true,
+      store: 'APP_STORE',
+      managementURL: null,
+      originalAppUserId: '$RCAnonymousID:test',
+      requestDate: null,
+      verification: null,
+    })).toBe(true);
+  });
+
+  it('does not show the grandfathered lifetime UI at or after the Pacific cutoff', () => {
+    expect(shouldDisplayGrandfatheredLifetimeUi({
+      isActive: true,
+      entitlementId: 'pro',
+      productIdentifier: 'com.p697.clawket.pro.yearly',
+      productPlanIdentifier: 'annual',
+      activeSubscriptionProductIdentifiers: ['com.p697.clawket.pro.yearly'],
+      purchasedProductIdentifiers: ['com.p697.clawket.pro.yearly'],
+      nonSubscriptionProductIdentifiers: [],
+      originalPurchaseDate: '2026-04-18T07:00:00.000Z',
+      latestPurchaseDate: '2026-04-18T07:00:00.000Z',
+      expirationDate: '2027-04-18T07:00:00.000Z',
+      willRenew: true,
+      store: 'APP_STORE',
+      managementURL: null,
+      originalAppUserId: '$RCAnonymousID:test',
+      requestDate: null,
+      verification: null,
+    })).toBe(false);
+  });
+
+  it('shows the lifetime upgrade announcement for grandfathered annual members', () => {
+    expect(shouldShowLifetimeUpgradeAnnouncementForSnapshot({
+      isActive: true,
+      entitlementId: 'pro',
+      productIdentifier: 'com.p697.clawket.pro.yearly',
+      productPlanIdentifier: 'annual',
+      activeSubscriptionProductIdentifiers: ['com.p697.clawket.pro.yearly'],
+      purchasedProductIdentifiers: ['com.p697.clawket.pro.yearly'],
+      nonSubscriptionProductIdentifiers: [],
+      originalPurchaseDate: '2026-04-10T00:00:00.000Z',
+      latestPurchaseDate: '2026-04-10T00:00:00.000Z',
+      expirationDate: '2027-04-10T00:00:00.000Z',
+      willRenew: true,
+      store: 'APP_STORE',
+      managementURL: null,
+      originalAppUserId: '$RCAnonymousID:test',
+      requestDate: null,
+      verification: null,
+    })).toBe(true);
   });
 
   it('selects the owned lifetime package from purchased identifiers', () => {
@@ -600,6 +714,29 @@ describe('selectRevenueCatPackages', () => {
       requestDate: null,
       verification: null,
     })?.packageIdentifier).toBe('$rc_monthly');
+  });
+
+  it('displays the lifetime package for grandfathered annual members', () => {
+    const packages = [toProPaywallPackage(monthlyPackage), toProPaywallPackage(annualPackage), toProPaywallPackage(lifetimePackage)];
+
+    expect(selectDisplayedRevenueCatPackage(packages, {
+      isActive: true,
+      entitlementId: 'pro',
+      productIdentifier: 'yearly',
+      productPlanIdentifier: 'annual',
+      activeSubscriptionProductIdentifiers: ['yearly'],
+      purchasedProductIdentifiers: ['yearly'],
+      nonSubscriptionProductIdentifiers: [],
+      originalPurchaseDate: '2026-04-10T00:00:00.000Z',
+      latestPurchaseDate: '2026-04-10T00:00:00.000Z',
+      expirationDate: '2027-04-10T00:00:00.000Z',
+      willRenew: true,
+      store: 'APP_STORE',
+      managementURL: null,
+      originalAppUserId: '$RCAnonymousID:test',
+      requestDate: null,
+      verification: null,
+    })?.packageIdentifier).toBe('$rc_lifetime');
   });
 
   it('prefers lifetime when the user owns lifetime alongside an active recurring subscription', () => {

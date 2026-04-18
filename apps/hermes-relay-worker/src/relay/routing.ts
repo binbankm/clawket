@@ -472,13 +472,7 @@ export function rejectClientRequestWithoutBridge(
     ws.send(response);
     touchClientActivity(runtime, attachment.clientId);
   } catch {
-    // Best effort error delivery; closing below still prompts the client to reconnect.
-  }
-
-  try {
-    ws.close(SOCKET_CLOSE_CODES.BRIDGE_UNAVAILABLE, 'bridge_unavailable');
-  } catch {
-    // Ignore close errors; the socket may already be detached remotely.
+    // Best effort error delivery; the client may retry on the same socket.
   }
 
   logRelayTelemetry('hermes_relay_worker', 'client_request_rejected_no_bridge', {

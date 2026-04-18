@@ -12,6 +12,9 @@ export function isConsoleScreenSupported(
     case 'ChatHistoryDetail':
     case 'FavoriteMessageDetail':
     case 'SessionsBoard':
+    case 'YouMindBoardDetail':
+    case 'YouMindBoardItemWebView':
+    case 'YouMindBoardPicker':
       return true;
     case 'AgentSessionsBoard':
       return capabilities.consoleAgentSessionsBoard;

@@ -29,6 +29,29 @@ describe('app update announcement service', () => {
     expect(getCurrentAppUpdateAnnouncement('1.2.0')).not.toBeNull();
   });
 
+  it('keeps the 2.1.0 release announcement entries available in the history', () => {
+    expect(getCurrentAppUpdateAnnouncement('2.1.0')).toMatchObject({
+      entries: expect.arrayContaining([
+        expect.objectContaining({
+          id: 'youmind-connection',
+          action: {
+            type: 'navigate_config_add_connection',
+            tab: 'quick',
+            flow: 'youmind',
+          },
+        }),
+        expect.objectContaining({
+          id: 'hermes-full-support',
+          action: {
+            type: 'navigate_config_add_connection',
+            tab: 'quick',
+            flow: 'local',
+          },
+        }),
+      ]),
+    });
+  });
+
   it('keeps the 1.9.0 release announcement available in the history', () => {
     expect(getCurrentAppUpdateAnnouncement('1.9.0')).not.toBeNull();
   });
@@ -86,7 +109,7 @@ describe('app update announcement service', () => {
     await markCurrentAppUpdateAnnouncementShown();
 
     expect(AsyncStorage.setItem).toHaveBeenCalledWith(
-      'clawket.appUpdateAnnouncementSeen.v1:2.0.0',
+      'clawket.appUpdateAnnouncementSeen.v1:2.1.0',
       '1',
     );
   });

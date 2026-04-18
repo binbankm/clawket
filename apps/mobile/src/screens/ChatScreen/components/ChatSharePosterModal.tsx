@@ -37,6 +37,7 @@ type Props = {
   agentName: string;
   agentEmoji?: string;
   agentAvatarUri?: string;
+  shareProductLabel?: string;
   messageText: string;
   modelLabel?: string;
   timestampMs?: number;
@@ -73,6 +74,7 @@ export function ChatSharePosterModal({
   agentName,
   agentEmoji,
   agentAvatarUri,
+  shareProductLabel,
   messageText,
   modelLabel,
   timestampMs,
@@ -185,6 +187,7 @@ export function ChatSharePosterModal({
   }, [visible, accentId]);
 
   const displayText = sanitizeDisplayText(messageText).trim();
+  const brandingLabel = shareProductLabel?.trim() || 'OpenClaw';
   const formattedTime = timestampMs
     ? new Date(timestampMs).toLocaleString(locale, {
         month: 'short', day: 'numeric', year: 'numeric',
@@ -282,7 +285,7 @@ export function ChatSharePosterModal({
       </View>
 
       {/* Branding */}
-      <Text style={s.branding}>{'\u{1F43E} OpenClaw \u{00D7} Clawket \u{1F43E}'}</Text>
+      <Text style={s.branding}>{`\u{1F43E} ${brandingLabel} \u{00D7} Clawket \u{1F43E}`}</Text>
     </>
   );
 
@@ -463,6 +466,7 @@ const s = StyleSheet.create({
     fontWeight: FontWeight.medium,
     color: C.textSecondary,
     letterSpacing: 0.3,
+    textAlign: 'center',
   },
   // Toggle
   toggleRow: {

@@ -27,4 +27,18 @@ describe('console-entry-descriptors', () => {
       description: 'OpenClaw protocol docs',
     });
   });
+
+  it('keeps Discover first in the shared library entry group', () => {
+    const items = buildConsoleLibraryEntryDescriptors({
+      backendKind: 'openclaw',
+      tConsole,
+      tCommon,
+    });
+
+    expect(items.map((item) => item.key)).toEqual([
+      'discover',
+      'clawhub',
+      'docs',
+    ]);
+  });
 });

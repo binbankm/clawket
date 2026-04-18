@@ -1,6 +1,6 @@
 {
   "name": "clawket",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "license": "AGPL-3.0-only",
   "main": "index.ts",
   "scripts": {
@@ -43,8 +43,10 @@
     "@react-navigation/native-stack": "^7.13.0",
     "@shopify/flash-list": "^2.3.0",
     "expo": "~55.0.9",
+    "expo-apple-authentication": "^55.0.13",
     "expo-application": "~55.0.10",
     "expo-asset": "~55.0.8",
+    "expo-auth-session": "^55.0.14",
     "expo-battery": "~55.0.9",
     "expo-blur": "~55.0.10",
     "expo-camera": "~55.0.11",

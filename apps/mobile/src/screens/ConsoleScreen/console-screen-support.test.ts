@@ -4,6 +4,8 @@ import type { GatewayBackendCapabilities } from '../../services/gateway-backends
 describe('console-screen-support', () => {
   it('gates Discover and ClawHub through backend capabilities', () => {
     const openClawCaps: GatewayBackendCapabilities = {
+      consoleRoot: true,
+      gatewayConnection: true,
       chatAbort: true,
       chatAttachments: true,
       consoleDiscover: true,
@@ -31,13 +33,13 @@ describe('console-screen-support', () => {
 
     const hermesCaps: GatewayBackendCapabilities = {
       ...openClawCaps,
-      consoleDiscover: false,
+      consoleDiscover: true,
       consoleClawHub: false,
     };
 
     expect(isConsoleScreenSupported('Discover', openClawCaps)).toBe(true);
     expect(isConsoleScreenSupported('ClawHub', openClawCaps)).toBe(true);
-    expect(isConsoleScreenSupported('Discover', hermesCaps)).toBe(false);
+    expect(isConsoleScreenSupported('Discover', hermesCaps)).toBe(true);
     expect(isConsoleScreenSupported('ClawHub', hermesCaps)).toBe(false);
     expect(isConsoleScreenSupported('AgentSessionsBoard', openClawCaps)).toBe(true);
     expect(isConsoleScreenSupported('AgentSessionsBoard', {

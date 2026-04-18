@@ -1494,9 +1494,16 @@ describe('HermesLocalBridge history metadata', () => {
     ));
 
     const sessionStorePath = await createSessionStorePath();
+    // Point hermesHomePath at an empty temp dir so readHermesNativeSessions
+    // returns empty deterministically, regardless of the developer's local
+    // ~/.hermes/state.db. Otherwise the persisted title can be either
+    // 'Hermes' or 'Hermes Clawket' depending on the dev machine.
+    const hermesHomePath = await mkdtemp(join(tmpdir(), 'clawket-hermes-home-'));
+    tempDirs.push(hermesHomePath);
     const bridge = new HermesLocalBridge({
       apiBaseUrl: 'http://127.0.0.1:8642',
       sessionStorePath,
+      hermesHomePath,
       startHermesIfNeeded: false,
     });
 
@@ -1513,6 +1520,9 @@ describe('HermesLocalBridge history metadata', () => {
       runId: 'run_1',
     });
 
+    // Disk writes are debounced; force a flush so the assertions below see
+    // the latest persisted content.
+    await (bridge as any).sessionStore.flush();
     const persisted = await readFile(sessionStorePath, 'utf8');
     expect(persisted).not.toContain('top secret prompt');
     expect(persisted).not.toContain('top secret reply');
@@ -1524,7 +1534,12 @@ describe('HermesLocalBridge history metadata', () => {
     expect(parsed.sessions?.[0]).toMatchObject({
       key: 'main',
       sessionId: 'clawket-hermes:main',
-      title: 'Hermes Clawket',
+      // With an empty hermesHomePath there is no native state.db to read, so
+      // the session falls back to the default 'Hermes' label set by
+      // ensureSession. The exact label is not the focus of this test — the
+      // assertion above already covers what we care about (no chat content
+      // ends up on disk).
+      title: 'Hermes',
     });
     expect(parsed.sessions?.[0]?.messages).toBeUndefined();
 

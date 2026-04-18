@@ -21,6 +21,7 @@ export type ConfigStackParamList = {
   ConfigHome: {
     addConnectionRequestAt?: number;
     addConnectionTab?: 'quick' | 'manual';
+    addConnectionFlow?: 'local' | 'youmind';
   } | undefined;
   ChatAppearance: undefined;
   HelpCenter: undefined;

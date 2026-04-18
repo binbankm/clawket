@@ -19,6 +19,11 @@ export type AppUpdateAnnouncementAction =
   | {
       type: 'navigate_config';
       screen: 'ChatAppearance' | 'OpenClawConfig' | 'OpenClawPermissionRepair';
+    }
+  | {
+      type: 'navigate_config_add_connection';
+      tab?: 'quick' | 'manual';
+      flow?: 'local' | 'youmind';
     };
 
 export type AppUpdateAnnouncementEntry = {
@@ -48,16 +53,29 @@ export const DEFAULT_APP_UPDATE_DEBUG_HINT =
 // Keep this array newest-first. The first entry is treated as the latest release.
 export const APP_UPDATE_RELEASES: AppUpdateRelease[] = [
   {
-    version: '2.0.0',
+    version: '2.1.0',
     releasedAt: '2026-04-12',
     entries: [
       {
+        id: 'youmind-connection',
+        emoji: '🧠',
+        title: 'YouMind Connection',
+        subtitle: 'You now can connect your YouMind account.',
+        action: {
+          type: 'navigate_config_add_connection',
+          tab: 'quick',
+          flow: 'youmind',
+        },
+      },
+      {
         id: 'hermes-full-support',
         emoji: '🪽',
-        title: 'Hermes Full Support',
+        title: 'Hermes Connection',
         subtitle: 'Connect and manage Hermes and OpenClaw at the same time.',
         action: {
-          type: 'none',
+          type: 'navigate_config_add_connection',
+          tab: 'quick',
+          flow: 'local',
         },
       },
     ],

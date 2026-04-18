@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Animated, LayoutAnimation, Platform, Pressable, ScrollView, StyleSheet, Text, UIManager, View, useWindowDimensions } from 'react-native';
 // navigation imports removed — agent creation is now handled in-place
 import Reanimated from 'react-native-reanimated';
-import { ImageUp, Link2, ScanLine } from 'lucide-react-native';
 import { useTranslation } from 'react-i18next';
 import { useIsFocused } from '@react-navigation/native';
 import { EdgeInsets } from 'react-native-safe-area-context';
@@ -20,10 +19,9 @@ import { finishHermesConnectTrace, markHermesConnectTrace } from '../../services
 import { useShareIntent } from '../../hooks/useShareIntent';
 import { useChatGatewaySwitcher } from '../../hooks/useChatGatewaySwitcher';
 import { useProPaywall } from '../../contexts/ProPaywallContext';
-import { resolveGatewayBackendKind } from '../../services/gateway-backends';
+import { getGatewayBackendCapabilities, getGatewayBackendDescriptor, resolveGatewayBackendKind } from '../../services/gateway-backends';
 import { useAppTheme } from '../../theme';
-import { FontSize, FontWeight, Radius, Shadow, Space } from '../../theme/tokens';
-import { useGatewayScanner } from '../../contexts/GatewayScannerContext';
+import { FontSize, FontWeight, Radius, Space } from '../../theme/tokens';
 import { sessionLabel } from '../../utils/chat-message';
 import { formatSessionContextLabel } from '../../utils/usage-format';
 import { resolveGatewayCacheScopeId } from '../../services/gateway-cache-scope';
@@ -44,7 +42,7 @@ import { useChatMessageEntrance } from './hooks/useChatMessageEntrance';
 import { useChatMessageSelection } from './hooks/useChatMessageSelection';
 import { useMessageFavorites } from './hooks/useMessageFavorites';
 import { useRotatingPlaceholder } from './hooks/useRotatingPlaceholder';
-import { QuickConnectGuideCard } from '../../components/config/QuickConnectGuideCard';
+import { QuickConnectionPanel } from '../../components/config/QuickConnectionPanel';
 import { buildChildSessionActivityCards } from './hooks/childSessionActivity';
 
 const COMPLETED_CHILD_STRIP_GRACE_MS = 8_000;
@@ -54,7 +52,7 @@ type Props = {
   insets: EdgeInsets;
   onOpenSidebar: () => void;
   onAddGatewayConnection: () => void;
-  onOpenCustomConnection: () => void;
+  onOpenQuickConnectionFlow: (flow: 'local' | 'youmind') => void;
   onManageAgents: () => void;
   onOpenAgentSessionsBoard?: () => void;
   openAgentsModalRequestAt?: number | null;
@@ -92,12 +90,9 @@ function AnimatedEntrance({ children }: { children: React.ReactNode }): React.JS
   return <Animated.View style={{ opacity }}>{children}</Animated.View>;
 }
 
-function InitializationView({ theme, styles, onAdd, onUpload, onAddCustom, t }: {
-  theme: ReturnType<typeof useAppTheme>['theme'];
+function InitializationView({ styles, onOpenQuickConnectionFlow, t }: {
   styles: ReturnType<typeof createStyles>;
-  onAdd: () => void;
-  onUpload: () => void;
-  onAddCustom: () => void;
+  onOpenQuickConnectionFlow: (flow: 'local' | 'youmind') => void;
   t: (key: string, options?: { ns?: string }) => string;
 }): React.JSX.Element {
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -118,47 +113,21 @@ function InitializationView({ theme, styles, onAdd, onUpload, onAddCustom, t }: 
     >
       <Animated.View style={[styles.initWrap, { opacity: fadeAnim }]}>
         <Text style={styles.initTitle}>{t('Your Agent Home is Ready')}</Text>
-        <Text style={styles.initSubtitle}>{t('Connect your OpenClaw or Hermes Agent.')}</Text>
-        <QuickConnectGuideCard style={styles.initGuideCard} variant="simple" />
-        <Pressable
-          onPress={onAdd}
-          style={({ pressed }) => [styles.initButton, pressed && styles.initButtonPressed]}
-        >
-          <View style={styles.initButtonContent}>
-            <ScanLine size={15} color={theme.colors.primaryText} strokeWidth={2} />
-            <Text style={styles.initButtonText}>{t('Scan QR Code', { ns: 'config' })}</Text>
-          </View>
-        </Pressable>
-        <Pressable
-          onPress={onUpload}
-          style={({ pressed }) => [styles.initOutlineButton, pressed && styles.initOutlineButtonPressed]}
-        >
-          <View style={styles.initButtonContent}>
-            <ImageUp size={15} color={theme.colors.primary} strokeWidth={2} />
-            <Text style={styles.initOutlineButtonText}>{t('Upload QR Image', { ns: 'config' })}</Text>
-          </View>
-        </Pressable>
-        <Pressable
-          onPress={onAddCustom}
-          style={({ pressed }) => [styles.initOutlineButton, pressed && styles.initOutlineButtonPressed]}
-        >
-          <View style={styles.initButtonContent}>
-            <Link2 size={15} color={theme.colors.primary} strokeWidth={2} />
-            <Text style={styles.initOutlineButtonText}>{t('Add custom connection', { ns: 'config' })}</Text>
-          </View>
-        </Pressable>
+        <QuickConnectionPanel
+          style={styles.initQuickConnectionPanel}
+          onSelectTarget={onOpenQuickConnectionFlow}
+        />
       </Animated.View>
     </ScrollView>
   );
 }
 
-export function ChatScreenLayout({ controller, insets, onOpenSidebar, onAddGatewayConnection, onOpenCustomConnection, onManageAgents, onOpenAgentSessionsBoard, openAgentsModalRequestAt }: Props): React.JSX.Element {
+export function ChatScreenLayout({ controller, insets, onOpenSidebar, onAddGatewayConnection, onOpenQuickConnectionFlow, onManageAgents, onOpenAgentSessionsBoard, openAgentsModalRequestAt }: Props): React.JSX.Element {
   const { t } = useTranslation(['chat', 'config']);
   const { isPro, showPaywall } = useProPaywall();
   const isFocused = useIsFocused();
-  const { importGatewayQrImage } = useGatewayScanner();
-  const { activeGatewayConfigId, currentAgentId, agentAvatars, setAgentAvatars, agents, gateway, gatewayEpoch, showModelUsage, chatFontSize, chatAppearance, config, requestAddGateway, isMultiAgent, switchAgent, debugMode, onSaved } = useAppContext();
-  const backendCapabilities = useMemo(() => gateway.getBackendCapabilities(), [gateway]);
+  const { activeGatewayConfigId, currentAgentId, agentAvatars, setAgentAvatars, agents, gateway, gatewayEpoch, showModelUsage, chatFontSize, chatAppearance, config, isMultiAgent, switchAgent, debugMode, onSaved } = useAppContext();
+  const backendCapabilities = useMemo(() => getGatewayBackendCapabilities(config), [config]);
   const [avatarModalVisible, setAvatarModalVisible] = useState(false);
   const [agentActivityVisible, setAgentActivityVisible] = useState(false);
   const currentAgent = agents.find((a) => a.id === currentAgentId);
@@ -433,6 +402,7 @@ export function ChatScreenLayout({ controller, insets, onOpenSidebar, onAddGatew
   });
 
   const backendKind = resolveGatewayBackendKind(config);
+  const shareProductLabel = getGatewayBackendDescriptor(config).label;
   const headerContextLabel = formatSessionContextLabel({
     totalTokens: backendKind === 'hermes' ? undefined : currentLabel?.totalTokens,
     totalTokensFresh: backendKind === 'hermes' ? false : currentLabel?.totalTokensFresh,
@@ -574,13 +544,8 @@ export function ChatScreenLayout({ controller, insets, onOpenSidebar, onAddGatew
 
       {!config ? (
         <InitializationView
-          theme={theme}
           styles={styles}
-          onAdd={requestAddGateway}
-          onUpload={() => {
-            void importGatewayQrImage();
-          }}
-          onAddCustom={onOpenCustomConnection}
+          onOpenQuickConnectionFlow={onOpenQuickConnectionFlow}
           t={t}
         />
       ) : controller.pairingPending ? (
@@ -691,7 +656,8 @@ export function ChatScreenLayout({ controller, insets, onOpenSidebar, onAddGatew
         copyButtonSize={copyButtonSize}
         createAgentVisible={createAgentVisible}
         currentAgentEmoji={currentAgent?.identity?.emoji ?? undefined}
-        currentAgentName={currentAgent?.name ?? currentAgent?.id ?? 'Agent'}
+        currentAgentName={currentAgentName ?? 'Agent'}
+        shareProductLabel={shareProductLabel}
         effectiveAvatarUri={effectiveAvatarUri}
         handleAgentCreated={handleAgentCreated}
         handleNewAgent={handleNewAgent}
@@ -758,7 +724,6 @@ export function ChatScreenLayout({ controller, insets, onOpenSidebar, onAddGatew
         onCloseStaticThinkPicker={controller.closeStaticThinkPicker}
         onSelectStaticThinkLevel={controller.onSelectStaticThinkLevel}
         takePhoto={controller.takePhoto}
-        theme={theme}
       />
     </Reanimated.View>
   );
@@ -785,56 +750,9 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['theme']['colors'])
       fontWeight: FontWeight.semibold,
       marginBottom: Space.sm,
     },
-    initSubtitle: {
-      color: colors.textMuted,
-      fontSize: FontSize.base,
-      textAlign: 'center' as const,
-      marginBottom: Space.lg + Space.xs,
-    },
-    initGuideCard: {
+    initQuickConnectionPanel: {
       width: '100%',
-      marginBottom: Space.md,
-    },
-    initButton: {
-      alignItems: 'center',
-      backgroundColor: colors.primary,
-      borderRadius: Radius.md,
       marginTop: Space.md,
-      paddingVertical: 11,
-      width: '100%',
-      ...Shadow.md,
-    },
-    initButtonPressed: {
-      opacity: 0.88,
-    },
-    initOutlineButton: {
-      alignItems: 'center',
-      backgroundColor: colors.surface,
-      borderRadius: Radius.md,
-      borderWidth: 1,
-      borderColor: colors.primary,
-      marginTop: Space.md,
-      paddingVertical: 11,
-      width: '100%',
-    },
-    initOutlineButtonPressed: {
-      backgroundColor: colors.surfaceMuted,
-    },
-    initButtonContent: {
-      flexDirection: 'row' as const,
-      alignItems: 'center' as const,
-      justifyContent: 'center' as const,
-      gap: Space.sm,
-    },
-    initButtonText: {
-      color: colors.primaryText,
-      fontSize: FontSize.base,
-      fontWeight: FontWeight.semibold,
-    },
-    initOutlineButtonText: {
-      color: colors.primary,
-      fontSize: FontSize.base,
-      fontWeight: FontWeight.semibold,
     },
     listArea: { flex: 1, position: 'relative' as const, zIndex: 1 },
     listAreaContent: { flex: 1 },

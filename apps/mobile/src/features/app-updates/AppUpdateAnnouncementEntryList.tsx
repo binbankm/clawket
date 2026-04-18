@@ -35,7 +35,8 @@ export function AppUpdateAnnouncementEntryList({ entries, colors, onEntryPress, 
         const isNavigable = entry.action.type === 'open_url'
           || entry.action.type === 'navigate_tab'
           || entry.action.type === 'navigate_console'
-          || entry.action.type === 'navigate_config';
+          || entry.action.type === 'navigate_config'
+          || entry.action.type === 'navigate_config_add_connection';
         const isLast = index === entries.length - 1;
 
         const content = (

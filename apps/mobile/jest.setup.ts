@@ -17,6 +17,32 @@ jest.mock('expo-linking', () => ({
   createURL: jest.fn((path: string) => `clawket://${path}`),
 }));
 
+// Mock expo-apple-authentication
+jest.mock('expo-apple-authentication', () => ({
+  isAvailableAsync: jest.fn(() => Promise.resolve(true)),
+  signInAsync: jest.fn(() => Promise.resolve({
+    identityToken: 'apple-id-token',
+  })),
+  AppleAuthenticationScope: {
+    EMAIL: 'EMAIL',
+    FULL_NAME: 'FULL_NAME',
+  },
+}));
+
+// Mock expo-auth-session/providers/google
+jest.mock('expo-auth-session/providers/google', () => ({
+  useIdTokenAuthRequest: jest.fn(() => ([
+    { url: 'https://accounts.google.com' },
+    null,
+    jest.fn(() => Promise.resolve({
+      type: 'success',
+      params: {
+        id_token: 'google-id-token',
+      },
+    })),
+  ])),
+}));
+
 // Mock expo-camera
 jest.mock('expo-camera', () => {
   const React = require('react');
@@ -49,6 +75,35 @@ jest.mock('expo-camera', () => {
     CameraView: MockCameraView,
   };
 });
+
+// Mock expo-application
+jest.mock('expo-application', () => ({
+  applicationId: 'com.clawket.test',
+  nativeApplicationVersion: '1.0.0',
+  nativeBuildVersion: '1',
+  getIosIdForVendorAsync: jest.fn(() => Promise.resolve(null)),
+  androidId: null,
+}));
+
+// Mock expo-constants
+jest.mock('expo-constants', () => ({
+  __esModule: true,
+  default: {
+    expoConfig: { extra: {} },
+    sessionId: 'jest-session',
+  },
+  expoConfig: { extra: {} },
+}));
+
+// Mock expo-device
+jest.mock('expo-device', () => ({
+  modelName: 'JestDevice',
+  osName: 'JestOS',
+  osVersion: '1.0',
+  brand: 'Jest',
+  manufacturer: 'Jest',
+  isDevice: false,
+}));
 
 // Mock expo-localization
 jest.mock('expo-localization', () => ({

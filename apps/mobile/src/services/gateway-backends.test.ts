@@ -138,9 +138,9 @@ describe('gateway-backends', () => {
       expect(caps.consoleCronCreate).toBe(false);
     });
 
-    it('disables OpenClaw-only capabilities for Hermes', () => {
+    it('keeps Hermes Discover enabled while disabling OpenClaw-only capabilities', () => {
       const caps = getGatewayBackendCapabilities('hermes');
-      expect(caps.consoleDiscover).toBe(false);
+      expect(caps.consoleDiscover).toBe(true);
       expect(caps.consoleClawHub).toBe(false);
       expect(caps.consoleChannels).toBe(false);
       expect(caps.consoleNodes).toBe(false);

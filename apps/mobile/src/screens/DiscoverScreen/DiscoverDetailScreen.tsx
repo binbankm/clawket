@@ -24,6 +24,7 @@ import { fetchDiscoverSkillDetail, fetchRelatedDiscoverSkills } from '../../feat
 import { resolveSourceLabel } from '../../features/discover/helpers';
 import type { DiscoverSkillDetail, DiscoverSkillItem } from '../../features/discover/types';
 import { DiscoverSkillRow } from './components/DiscoverSkillCard';
+import { dismissDiscoverFlowForChat } from './discover-navigation';
 import { useAppContext } from '../../contexts/AppContext';
 import { analyticsEvents } from '../../services/analytics/events';
 import { useAppTheme } from '../../theme';
@@ -104,7 +105,7 @@ export function DiscoverDetailScreen(): React.JSX.Element {
       source: resolved.source,
       location: 'detail',
     });
-    navigation.popToTop();
+    dismissDiscoverFlowForChat(navigation);
     setTimeout(() => requestChatWithInput(resolved.installPrompt), 50);
   };
 
