@@ -20,6 +20,7 @@ import {
   createListContentStyle,
 } from '../ui';
 import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { useAppContext } from '../../contexts/AppContext';
 import { GatewayClient } from '../../services/gateway';
 import { useAppTheme } from '../../theme';
@@ -78,20 +79,20 @@ function iconForFile(name: string): string {
   return FILE_ICONS[name] ?? '📄';
 }
 
-function formatFileSize(size?: number): string {
-  if (size === undefined || !Number.isFinite(size)) return 'Unknown size';
+function formatFileSize(size: number | undefined, t: TFunction<'console'>): string {
+  if (size === undefined || !Number.isFinite(size)) return t('Unknown size');
   if (size < 1024) return `${size} B`;
   if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function formatUpdated(updatedAtMs?: number): string {
-  if (!updatedAtMs) return 'Unknown time';
+function formatUpdated(updatedAtMs: number | undefined, t: TFunction<'console'>): string {
+  if (!updatedAtMs) return t('Unknown time');
   const relative = relativeTime(updatedAtMs);
-  if (!relative) return 'Unknown time';
-  if (relative === 'now') return 'just now';
-  if (relative === 'Yesterday') return 'Yesterday';
-  return `${relative} ago`;
+  if (!relative) return t('Unknown time');
+  if (relative === 'now') return t('just now');
+  if (relative === 'Yesterday') return t('Yesterday');
+  return t('{{value}} ago', { value: relative });
 }
 
 function highlightMatch(text: string, query: string): Array<{ text: string; highlight: boolean }> {
@@ -174,13 +175,13 @@ export function FileListView({
       setFiles(result);
       setError(null);
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Failed to load files';
+      const message = err instanceof Error ? err.message : t('Failed to load files');
       setError(message);
     } finally {
       if (mode === 'initial') setLoading(false);
       if (mode === 'refresh') setRefreshing(false);
     }
-  }, [agentId, gateway, gatewayEpoch]);
+  }, [agentId, gateway, gatewayEpoch, t]);
 
   const ensureFileContentCache = useCallback(async () => {
     if (fileContentCache.current.size > 0) return;
@@ -314,7 +315,7 @@ export function FileListView({
           <View style={styles.cardText}>
             <Text style={[styles.cardTitle, disabled && styles.textDisabled]}>{item.name}</Text>
             <Text style={[styles.cardMeta, disabled && styles.textDisabled]}>
-              {item.missing ? 'Not created' : `${formatFileSize(item.size)} • ${formatUpdated(item.updatedAtMs)}`}
+              {item.missing ? t('Not created') : `${formatFileSize(item.size, t)} • ${formatUpdated(item.updatedAtMs, t)}`}
             </Text>
           </View>
           <Text style={[styles.cardArrow, disabled && styles.textDisabled]}>{item.missing ? '-' : '›'}</Text>
@@ -364,7 +365,7 @@ export function FileListView({
           activeOpacity={0.7}
         >
           {renderHighlightedSnippet(match.snippet, debouncedQuery)}
-          <Text style={styles.matchLineNumber}>Line {match.lineNumber}</Text>
+          <Text style={styles.matchLineNumber}>{t('Line {{lineNumber}}', { lineNumber: match.lineNumber })}</Text>
         </TouchableOpacity>
       ))}
     </View>
@@ -399,10 +400,10 @@ export function FileListView({
       ) : null}
       {error ? (
         <View style={styles.errorCard}>
-          <Text style={styles.errorTitle}>Failed to load files</Text>
+          <Text style={styles.errorTitle}>{t('Failed to load files')}</Text>
           <Text style={styles.errorMessage}>{error}</Text>
           <TouchableOpacity style={styles.retryButton} onPress={() => loadFiles('initial')}>
-            <Text style={styles.retryText}>Retry</Text>
+            <Text style={styles.retryText}>{t('Retry')}</Text>
           </TouchableOpacity>
         </View>
       ) : null}
@@ -441,7 +442,7 @@ export function FileListView({
   const listEmptyComponent = isSearchMode
     ? (!searchLoading ? (
       <View style={styles.emptySearchState}>
-        <Text style={styles.emptySearchText}>No results for "{searchQuery.trim()}"</Text>
+        <Text style={styles.emptySearchText}>{t('No results for "{{query}}"', { query: searchQuery.trim() })}</Text>
       </View>
     ) : null)
     : (error ? null : <EmptyState icon="📄" title={t('No memory found.')} />);

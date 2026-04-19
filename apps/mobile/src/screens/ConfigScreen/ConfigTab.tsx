@@ -8,6 +8,7 @@ import { ChatAppearanceScreen } from './ChatAppearanceScreen';
 import { HelpCenterScreen } from './HelpCenterScreen';
 import { OpenClawReleasesScreen } from './OpenClawReleasesScreen';
 import { GatewayConfigViewerScreen } from './GatewayConfigViewerScreen';
+import { GatewayConfigEditorScreen } from './GatewayConfigEditorScreen';
 import { GatewayConfigBackupsScreen } from './GatewayConfigBackupsScreen';
 import { ReleaseNotesHistoryScreen } from './ReleaseNotesHistoryScreen';
 import { OpenClawConfigScreen } from './OpenClawConfigScreen';
@@ -40,6 +41,7 @@ export type ConfigStackParamList = {
   OpenClawPermissionRepair: undefined;
   OpenClawPermissions: undefined;
   GatewayConfigViewer: undefined;
+  GatewayConfigEditor: undefined;
   GatewayConfigBackups: undefined;
 };
 
@@ -99,6 +101,7 @@ export function ConfigTab(): React.JSX.Element {
       <ConfigStack.Screen name="OpenClawPermissionRepair" component={OpenClawPermissionRepairScreen} options={modalScreenOptions} />
       <ConfigStack.Screen name="OpenClawPermissions" component={OpenClawPermissionsScreen} options={modalScreenOptions} />
       <ConfigStack.Screen name="GatewayConfigViewer" component={GatewayConfigViewerScreen} options={modalScreenOptions} />
+      <ConfigStack.Screen name="GatewayConfigEditor" component={GatewayConfigEditorScreen} options={modalScreenOptions} />
       <ConfigStack.Screen name="GatewayConfigBackups" component={GatewayConfigBackupsScreen} options={modalScreenOptions} />
     </ConfigStack.Navigator>
   );

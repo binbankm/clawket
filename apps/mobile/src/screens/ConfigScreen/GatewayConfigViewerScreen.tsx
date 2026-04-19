@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { RefreshCw } from 'lucide-react-native';
+import { FilePenLine, RefreshCw } from 'lucide-react-native';
 import { useTranslation } from 'react-i18next';
 import { JsonTree } from '../../components/chat/JsonTree';
 import { EmptyState, HeaderActionButton, LoadingState, createCardContentStyle } from '../../components/ui';
@@ -63,16 +63,27 @@ export function GatewayConfigViewerScreen(): React.JSX.Element {
     void loadConfig();
   }, [loadConfig]);
 
+  const handleEditPress = useCallback(() => {
+    navigation.navigate('GatewayConfigEditor');
+  }, [navigation]);
+
   useNativeStackModalHeader({
     navigation,
     title: t('View Config'),
     onClose: () => navigation.goBack(),
     rightContent: (
-      <HeaderActionButton
-        icon={RefreshCw}
-        onPress={handleRefresh}
-        size={20}
-      />
+      <View style={{ flexDirection: 'row', gap: Space.sm }}>
+        <HeaderActionButton
+          icon={FilePenLine}
+          onPress={handleEditPress}
+          size={20}
+        />
+        <HeaderActionButton
+          icon={RefreshCw}
+          onPress={handleRefresh}
+          size={20}
+        />
+      </View>
     ),
   });
 
