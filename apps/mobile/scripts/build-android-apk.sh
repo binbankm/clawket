@@ -2,62 +2,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-OFFICE_GAME_DIR="$ROOT_DIR/office-game"
 ANDROID_DIR="$ROOT_DIR/android"
-OUTPUT_DIR="$ANDROID_DIR/app/build/outputs/bundle/release"
-AAB_PATH="$OUTPUT_DIR/app-release.aab"
-
-compute_base_version_code() {
-  local package_json_path="$1"
-  node - "$package_json_path" <<'EOF'
-const packageJson = require(process.argv[2]);
-const version = String(packageJson.version || '0.0.0').split('-')[0];
-const parts = version.split('.').map((part) => {
-  const value = Number.parseInt(part, 10);
-  return Number.isFinite(value) ? value : 0;
-});
-while (parts.length < 3) {
-  parts.push(0);
-}
-process.stdout.write(String((parts[0] * 10000) + (parts[1] * 100) + parts[2]));
-EOF
-}
-
-read_native_version_code() {
-  local build_gradle="$ANDROID_DIR/app/build.gradle"
-  if [[ ! -f "$build_gradle" ]]; then
-    echo ""
-    return
-  fi
-
-  rg -o 'versionCode[[:space:]]+[0-9]+' "$build_gradle" \
-    | tail -n 1 \
-    | awk '{ print $2 }'
-}
-
-resolve_android_version_code() {
-  if [[ -n "${EXPO_ANDROID_VERSION_CODE:-}" ]]; then
-    echo "$EXPO_ANDROID_VERSION_CODE"
-    return
-  fi
-
-  local base_code
-  base_code="$(compute_base_version_code "$ROOT_DIR/package.json")"
-
-  local existing_code=""
-  if existing_code="$(read_native_version_code)"; then
-    :
-  else
-    existing_code=""
-  fi
-
-  if [[ -n "$existing_code" ]] && [[ "$existing_code" =~ ^[0-9]+$ ]] && (( existing_code >= base_code )); then
-    echo $((existing_code + 1))
-    return
-  fi
-
-  echo "$base_code"
-}
+APK_PATH="$ANDROID_DIR/app/build/outputs/apk/release/app-release.apk"
 
 normalize_release_signing_gradle() {
   local build_gradle="$ANDROID_DIR/app/build.gradle"
@@ -159,19 +105,6 @@ if [[ -z "$JAVA_HOME_VALUE" ]]; then
   exit 1
 fi
 
-ANDROID_VERSION_CODE_VALUE="$(resolve_android_version_code)"
-
-if [[ ! "$ANDROID_VERSION_CODE_VALUE" =~ ^[0-9]+$ ]] || (( ANDROID_VERSION_CODE_VALUE <= 0 )); then
-  echo "Resolved invalid Android version code: $ANDROID_VERSION_CODE_VALUE"
-  exit 1
-fi
-
-echo "Building Office packaged assets..."
-(
-  cd "$OFFICE_GAME_DIR"
-  npm run build
-)
-
 echo "Validating Android public release config..."
 (
   cd "$ROOT_DIR"
@@ -184,33 +117,30 @@ echo "Restoring Android signing config..."
 echo "Patching Android native dependency Gradle files..."
 "$ROOT_DIR/scripts/patch-android-native-deps.sh"
 
-echo "Syncing Expo Android native config with versionCode $ANDROID_VERSION_CODE_VALUE..."
+echo "Syncing Expo Android native config..."
 (
   cd "$ROOT_DIR"
-  EXPO_ANDROID_VERSION_CODE="$ANDROID_VERSION_CODE_VALUE" \
   npx expo prebuild --platform android --no-install
 )
 
 echo "Normalizing Android release signing config..."
 normalize_release_signing_gradle
 
-echo "Building signed Android App Bundle..."
+echo "Building signed Android release APK..."
 (
   cd "$ANDROID_DIR"
   export PATH="$JAVA_HOME_VALUE/bin:$PATH"
   ANDROID_HOME="$ANDROID_HOME_VALUE" \
   JAVA_HOME="$JAVA_HOME_VALUE" \
-  EXPO_ANDROID_VERSION_CODE="$ANDROID_VERSION_CODE_VALUE" \
   ./gradlew --no-daemon -Dorg.gradle.java.home="$JAVA_HOME_VALUE" \
-    app:bundleRelease -x lint -x test --configure-on-demand --build-cache
+    app:assembleRelease -x lint -x test --configure-on-demand --build-cache
 )
 
-if [[ ! -f "$AAB_PATH" ]]; then
-  echo "Expected app bundle was not produced: $AAB_PATH"
+if [[ ! -f "$APK_PATH" ]]; then
+  echo "Expected release APK was not produced: $APK_PATH"
   exit 1
 fi
 
 echo ""
-echo "Signed Android App Bundle ready:"
-echo "  $AAB_PATH"
-echo "  versionCode=$ANDROID_VERSION_CODE_VALUE"
+echo "Signed Android release APK ready:"
+echo "  $APK_PATH"

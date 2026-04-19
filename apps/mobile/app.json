@@ -103,6 +103,29 @@
       "./plugins/with-android-release-signing",
       "./plugins/with-xcode-env"
     ],
-    "scheme": "clawket"
+    "scheme": "clawket",
+    "extra": {
+      "eas": {
+        "build": {
+          "experimental": {
+            "ios": {
+              "appExtensions": [
+                {
+                  "targetName": "expo-sharing-extension",
+                  "bundleIdentifier": "com.p697.clawket.expo-sharing-extension",
+                  "entitlements": {
+                    "com.apple.security.application-groups": [
+                      "group.com.p697.clawket"
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        },
+        "projectId": "972e845f-da81-44db-a908-24be4ca80288"
+      }
+    },
+    "owner": "p697"
   }
 }

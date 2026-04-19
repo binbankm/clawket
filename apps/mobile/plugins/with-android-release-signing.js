@@ -38,17 +38,19 @@ def releaseKeyAliasValue = readReleaseSigningValue("keyAlias", "CLAWKET_ANDROID_
 def releaseKeyPasswordValue = readReleaseSigningValue("keyPassword", "CLAWKET_ANDROID_KEY_PASSWORD")
 def hasReleaseSigningConfig = releaseStoreFileValue && releaseStorePasswordValue && releaseKeyAliasValue && releaseKeyPasswordValue
 def allowDebugReleaseSigning = (findProperty("clawket.allowDebugReleaseSigning") ?: System.getenv("CLAWKET_ALLOW_DEBUG_RELEASE_SIGNING") ?: "false").toString().toBoolean()
+def isEasBuild = (System.getenv("EAS_BUILD") ?: "false").toString().toBoolean()
 
 gradle.taskGraph.whenReady { graph ->
     def releaseTaskRequested = graph.allTasks.any { task ->
         task.name?.toLowerCase()?.contains("release") || task.name?.toLowerCase()?.contains("bundle")
     }
 
-    if (releaseTaskRequested && !hasReleaseSigningConfig && !allowDebugReleaseSigning) {
+    if (releaseTaskRequested && !hasReleaseSigningConfig && !allowDebugReleaseSigning && !isEasBuild) {
         throw new GradleException(
             "Missing Android release signing config. " +
             "Provide CLAWKET_ANDROID_KEYSTORE_PATH / CLAWKET_ANDROID_KEYSTORE_PASSWORD / " +
-            "CLAWKET_ANDROID_KEY_ALIAS / CLAWKET_ANDROID_KEY_PASSWORD, or create android/app/keystore.properties. " +
+            "CLAWKET_ANDROID_KEY_ALIAS / CLAWKET_ANDROID_KEY_PASSWORD, create android/app/keystore.properties, " +
+            "or run inside EAS Build with remote credentials enabled. " +
             "For temporary local-only testing, rerun with -Pclawket.allowDebugReleaseSigning=true."
         )
     }

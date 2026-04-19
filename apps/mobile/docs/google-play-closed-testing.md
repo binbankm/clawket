@@ -10,6 +10,7 @@ The repo now supports:
 
 - release signing via `android/app/keystore.properties` or `CLAWKET_ANDROID_KEY_*` environment variables
 - signed Android App Bundle builds through `npm run build:android:aab`
+- EAS Android store builds through `eas build --platform android --profile production`
 - Android config validation through `npm run config:check:android`
 - blocking store builds when `EXPO_PUBLIC_REVENUECAT_TEST_API_KEY` or `EXPO_PUBLIC_UNLOCK_PRO` are enabled
 
@@ -21,9 +22,26 @@ There are three outside-the-repo prerequisites that cannot be completed locally 
 2. Google Play Console app + closed testing track
 3. RevenueCat Android product mapping
 
-## 1. Local Release Environment
+## 1. Release Environment
 
-On the release machine, prepare:
+The default Android release path should be EAS Build:
+
+```bash
+eas build --platform android --profile production
+```
+
+Before using EAS, sync local app env into Expo's remote environments:
+
+```bash
+cd apps/mobile
+npm run eas:env:sync
+```
+
+`apps/mobile/.env.local` does not flow into EAS automatically. If you skip this, RevenueCat and other public config can be missing from the remote build even though local builds work.
+
+Only fall back to local Gradle release builds when EAS credentials are unavailable or need emergency recovery.
+
+If you do need a local release machine, prepare:
 
 - JDK 17
 - Android SDK

@@ -61,7 +61,33 @@ keyAlias=upload
 keyPassword=...
 ```
 
+If local signing is needed, the recommended recovery path is:
+
+```bash
+cd apps/mobile
+./scripts/restore-android-signing.sh
+```
+
+That script rebuilds `android/app/keystore.properties` from:
+
+- `CLAWKET_ANDROID_KEYSTORE_PATH`
+- `CLAWKET_ANDROID_KEY_ALIAS` (defaults to `upload`)
+- macOS Keychain service `clawket-android-keystore-store-password`
+- macOS Keychain service `clawket-android-keystore-key-password`
+
+Do not commit the restored `keystore.properties` file.
+
+After `npm install`, the repo now also auto-runs `./scripts/patch-android-native-deps.sh` to re-apply the Android Kotlin source-set fix needed by `@react-native-menu/menu` and `react-native-keyboard-controller` on the current Expo / React Native toolchain.
+
 ## Required Env Values For Google Play Builds
+
+For normal Android releases, prefer EAS Build:
+
+```bash
+eas build --platform android --profile production
+```
+
+Treat local Gradle signing as a recovery-only path.
 
 At minimum, confirm these are populated in `apps/mobile/.env.local`:
 
@@ -171,6 +197,7 @@ Cause:
 Fix:
 
 - create `apps/mobile/android/app/keystore.properties`
+- or run `./scripts/restore-android-signing.sh` on this machine
 - or export `CLAWKET_ANDROID_KEYSTORE_PATH`, `CLAWKET_ANDROID_KEYSTORE_PASSWORD`, `CLAWKET_ANDROID_KEY_ALIAS`, `CLAWKET_ANDROID_KEY_PASSWORD`
 
 ### APK install fails with `INSTALL_FAILED_UPDATE_INCOMPATIBLE`

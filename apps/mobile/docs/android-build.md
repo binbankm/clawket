@@ -286,6 +286,24 @@ Notes:
 - `storeFile` can point anywhere on disk; it does not need to live inside the repo.
 - This is the easiest local setup for signed bundles.
 
+If local signing is needed, the recovery flow is:
+
+```bash
+cd apps/mobile
+./scripts/restore-android-signing.sh
+```
+
+That script recreates `android/app/keystore.properties` from:
+
+- `CLAWKET_ANDROID_KEYSTORE_PATH`
+- `CLAWKET_ANDROID_KEY_ALIAS` (defaults to `upload`)
+- passwords stored in macOS Keychain or passed via env vars
+
+The expected Keychain service names are:
+
+- `clawket-android-keystore-store-password`
+- `clawket-android-keystore-key-password`
+
 ### Option B: Environment Variables
 
 You can also provide signing values at build time:
@@ -301,9 +319,29 @@ This is the better fit for CI or ephemeral shell sessions.
 
 ## Store-Ready AAB Build
 
-Google Play closed testing should use a release-signed `.aab`.
+The default Android release path should be EAS Build:
 
-Local build command:
+```bash
+eas build --platform android --profile production
+```
+
+Important:
+
+- `apps/mobile/.env.local` is local-only and is not uploaded to EAS automatically.
+- Before the first remote Android build on a machine, sync the current app env into EAS:
+
+```bash
+cd apps/mobile
+npm run eas:env:sync
+```
+
+- Store-distribution Android EAS builds now run a pre-install validation step and will fail if RevenueCat is missing or if `EXPO_PUBLIC_REVENUECAT_TEST_API_KEY` / `EXPO_PUBLIC_UNLOCK_PRO` are enabled.
+
+Use the local Gradle path below only as a fallback or recovery flow.
+
+Google Play closed testing can also use a release-signed local `.aab`.
+
+Fallback local build command:
 
 ```bash
 npm run build:android:aab
@@ -312,6 +350,9 @@ npm run build:android:aab
 What it does:
 
 - builds the Office packaged assets
+- patches the known Android Gradle source-set issue in `@react-native-menu/menu` and `react-native-keyboard-controller`
+- restores the ignored local signing file
+- normalizes the generated Expo `android/app/build.gradle` release signing block
 - runs `./gradlew app:bundleRelease`
 - expects release signing credentials to be configured first
 
@@ -319,6 +360,16 @@ Artifact:
 
 ```text
 android/app/build/outputs/bundle/release/app-release.aab
+```
+
+The fallback local AAB build restores the ignored local signing file automatically before Gradle runs, but it still requires `CLAWKET_ANDROID_KEYSTORE_PATH` plus the keystore passwords.
+
+If dependencies are reinstalled, `npm install` now also runs `./scripts/patch-android-native-deps.sh` via `postinstall`, so the Kotlin source-set fix is re-applied automatically.
+
+For a locally installable release APK signed with the same upload key, use:
+
+```bash
+npm run build:android:apk
 ```
 
 If you only want a temporary local release build and do not have the keystore yet, keep using the existing APK path with the debug-sign fallback:
