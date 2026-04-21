@@ -12,6 +12,7 @@ import { analyticsEvents } from '../../services/analytics/events';
 import { ChatCacheService } from '../../services/chat-cache';
 import { useAppTheme } from '../../theme';
 import { ChatControllerProvider, useChatControllerContext } from './ChatControllerContext';
+import { agentIdFromSessionKey } from './hooks/agentActivity';
 import { useChatController } from './hooks/useChatController';
 import { ChatScreen } from './index';
 import { YouMindChatTab } from './YouMindChatTab';
@@ -139,8 +140,9 @@ const ChatDrawerContent = React.memo(function ChatDrawerContent({
   }, [controller, gateway]);
 
   const handleResetSession = React.useCallback(async (session: import('../../types').SessionInfo) => {
+    const cacheAgentId = agentIdFromSessionKey(session.key) ?? currentAgentId;
     await resetGatewaySession(gateway, session.key);
-    await ChatCacheService.deleteMessages(gatewayConfigId, currentAgentId, session.key);
+    await ChatCacheService.deleteMessages(gatewayConfigId, cacheAgentId, session.key);
     if (controller.sessionKey === session.key) {
       controller.reloadSession(session, { clearInput: false, clearWhenEmpty: true });
     }
@@ -148,8 +150,9 @@ const ChatDrawerContent = React.memo(function ChatDrawerContent({
   }, [controller, currentAgentId, gateway, gatewayConfigId]);
 
   const handleDeleteSession = React.useCallback(async (session: import('../../types').SessionInfo) => {
+    const cacheAgentId = agentIdFromSessionKey(session.key) ?? currentAgentId;
     await deleteGatewaySession(gateway, session.key);
-    await ChatCacheService.deleteMessages(gatewayConfigId, currentAgentId, session.key);
+    await ChatCacheService.deleteMessages(gatewayConfigId, cacheAgentId, session.key);
     await controller.refreshSessions();
 
     if (controller.sessionKey === session.key) {
