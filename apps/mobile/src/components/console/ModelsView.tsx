@@ -1195,7 +1195,7 @@ export function ModelsView({
 
   const modelListContent = (
     <>
-      {!loading && !error && sections.length > 0 && (
+      {!loading && !error && (
         <SearchInput
           value={search}
           onChangeText={setSearch}
@@ -1216,7 +1216,7 @@ export function ModelsView({
             </TouchableOpacity>
           </View>
         </View>
-      ) : sections.length === 0 ? (
+      ) : sections.length === 0 && !search.trim() ? (
         <EmptyState
           icon="🧩"
           title={t('No models available')}
